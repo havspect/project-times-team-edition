@@ -1,0 +1,64 @@
+package api
+
+import (
+	"context"
+	"log/slog"
+	"net/http"
+
+	"github.com/havspect/project-times/internal/store"
+)
+
+// The permission vocabulary. Handlers ask these questions instead of re-deriving
+// "lead of the team that owns the project" in each one.
+
+// requireUser returns the authenticated user, or 401.
+func requireUser(ctx context.Context) (*store.User, error) {
+	if u := principal(ctx); u != nil {
+		return u, nil
+	}
+	return nil, problem(http.StatusUnauthorized, urnUnauthorized, "authentication required")
+}
+
+// requireAdmin gates users, teams, memberships and restores.
+func requireAdmin(ctx context.Context) (*store.User, error) {
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !u.IsAdmin {
+		return nil, problem(http.StatusForbidden, urnForbidden, "admin only")
+	}
+	return u, nil
+}
+
+// canManageTeam reports whether u may create and edit projects of teamID: an
+// admin always, a lead of an unarchived team.
+func (s *Server) canManageTeam(u *store.User, teamID uint) (bool, error) {
+	if u.IsAdmin {
+		return true, nil
+	}
+	return s.Store.LeadsTeam(u.ID, teamID)
+}
+
+// requireTeamManager is canManageTeam as a handler guard: 401, then 403.
+func (s *Server) requireTeamManager(ctx context.Context, teamID uint) (*store.User, error) {
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ok, err := s.canManageTeam(u, teamID)
+	if err != nil {
+		return nil, internal(err)
+	}
+	if !ok {
+		return nil, problem(http.StatusForbidden, urnForbidden, "you do not lead this team")
+	}
+	return u, nil
+}
+
+// internal logs a store failure and answers 500, so a broken database never
+// looks like a permission decision.
+func internal(err error) error {
+	slog.Error("store", "error", err)
+	return problem(http.StatusInternalServerError, urnInternal, "internal error")
+}

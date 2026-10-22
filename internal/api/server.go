@@ -41,10 +41,28 @@ func New(st *store.Store, clk clock.Clock) http.Handler {
 	cfg.CreateHooks = nil
 	api := humago.New(mux, cfg)
 
+	// The document advertises both ways to authenticate; withRequest enforces them.
+	doc := api.OpenAPI()
+	doc.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
+		"bearerAuth": {
+			Type: "http", Scheme: "bearer", BearerFormat: "ts_",
+			Description: "Personal API token, shown once when it is created.",
+		},
+		"sessionCookie": {
+			Type: "apiKey", In: "cookie", Name: sessionCookie,
+			Description: "Session cookie set by POST /auth/login.",
+		},
+	}
+	doc.Security = []map[string][]string{{"bearerAuth": {}}, {"sessionCookie": {}}}
+
 	mux.HandleFunc("GET /healthz", health)
 
 	s := &Server{Store: st, Clock: clk}
-	s.routes(api)
+	s.authRoutes(api)
+	s.projectRoutes(api)
+	s.teamRoutes(api)
+	s.tokenRoutes(api)
+	s.userRoutes(api)
 	return s.withRequest(mux)
 }
 

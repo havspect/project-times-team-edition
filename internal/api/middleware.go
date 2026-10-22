@@ -24,10 +24,11 @@ const (
 
 type requestInfo struct {
 	Request    *http.Request
-	User       *store.User    // nil when unauthenticated
-	Session    *store.Session // nil when unauthenticated
-	Cookie     bool           // credentials came from the cookie
-	CookieName string         // which session cookie the request carried, for clearing it
+	User       *store.User     // nil when unauthenticated
+	Session    *store.Session  // nil unless credentials came from the cookie
+	Token      *store.APIToken // nil unless credentials came from the bearer header
+	Cookie     bool            // credentials came from the cookie
+	CookieName string          // which session cookie the request carried, for clearing it
 }
 
 type requestKey struct{}
@@ -50,7 +51,15 @@ func principal(ctx context.Context) *store.User {
 func (s *Server) withRequest(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ri := &requestInfo{Request: r}
-		if name, value, ok := sessionToken(r); ok {
+		// A bearer header wins over a cookie: a bad token must not fall back to
+		// whatever session the browser happens to hold.
+		if token, ok := bearerToken(r); ok {
+			if err := s.applyToken(ri, token); err != nil {
+				slog.Error("token auth", "error", err)
+				writeProblem(w, problem(http.StatusInternalServerError, urnInternal, "internal error"))
+				return
+			}
+		} else if name, value, ok := sessionToken(r); ok {
 			ri.CookieName = name
 			sess, err := s.Store.SessionByTokenHash(auth.HashToken(value))
 			switch {
@@ -76,13 +85,77 @@ func (s *Server) withRequest(next http.Handler) http.Handler {
 				}
 			}
 		}
-		// Bearer API tokens are stage 2; only the session cookie authenticates here.
 		if ri.Cookie && !safeMethod(r.Method) && !sameOrigin(r) {
 			writeProblem(w, problem(http.StatusForbidden, urnInvalidOrigin, "cross-origin request rejected"))
 			return
 		}
+		// A user created or reset by an admin reaches only the endpoints the spec
+		// allows until they replace the initial password.
+		if ri.User != nil && ri.User.MustChangePassword && !passwordChangePath(r) {
+			writeProblem(w, problem(http.StatusForbidden, urnPasswordChangeRequired, "change your password first"))
+			return
+		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestKey{}, ri)))
 	})
+}
+
+// bearerToken returns the personal API token presented in the Authorization header.
+func bearerToken(r *http.Request) (string, bool) {
+	scheme, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") || token == "" {
+		return "", false
+	}
+	return token, true
+}
+
+// applyToken authenticates a personal token as its owning user. An unknown,
+// revoked or deactivated one leaves the request anonymous so handlers answer 401.
+func (s *Server) applyToken(ri *requestInfo, token string) error {
+	t, err := s.Store.APITokenByTokenHash(auth.HashToken(token))
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return nil
+	case err != nil:
+		return err
+	case t.RevokedAt != nil:
+		return nil
+	}
+	u, err := s.Store.UserByID(t.UserID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return nil
+	case err != nil:
+		return err
+	case !u.Active:
+		return nil
+	}
+	ri.User, ri.Token = u, t
+	s.touchToken(t)
+	return nil
+}
+
+// touchToken records last_used_at, at most once a minute so a busy client does
+// not turn every read into a write.
+func (s *Server) touchToken(t *store.APIToken) {
+	now := s.Clock.Now()
+	if t.LastUsedAt != nil && now.Sub(*t.LastUsedAt) < time.Minute {
+		return
+	}
+	if err := s.Store.TouchAPIToken(t.ID, now); err != nil {
+		slog.Error("touch api token", "error", err)
+	}
+}
+
+// passwordChangePath lists what a user with must_change_password may reach.
+func passwordChangePath(r *http.Request) bool {
+	switch r.Method + " " + r.URL.Path {
+	case "GET " + apiPrefix + "/me",
+		"POST " + apiPrefix + "/me/password",
+		"POST " + apiPrefix + "/auth/logout",
+		"POST " + apiPrefix + "/auth/login":
+		return true
+	}
+	return false
 }
 
 // expireSession drops a session the clock has passed and asks the browser to forget

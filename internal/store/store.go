@@ -12,7 +12,7 @@ import (
 )
 
 // SchemaVersion is reported by /healthz so support can tell which model set a database has.
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 // ErrNotFound is returned when a lookup matches no row.
 var ErrNotFound = errors.New("not found")
@@ -59,7 +59,7 @@ func (s *Store) Close() error {
 
 // Migrate creates or updates the tables; running it on every boot is safe.
 func (s *Store) Migrate() error {
-	return s.db.AutoMigrate(&User{}, &Session{})
+	return s.db.AutoMigrate(&User{}, &Session{}, &Team{}, &TeamMembership{}, &Project{}, &APIToken{})
 }
 
 // CreateUser inserts u, lowercasing and trimming u.Email in place.
