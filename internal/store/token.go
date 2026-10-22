@@ -16,7 +16,17 @@ func (s *Store) RevokeAPIToken(id uint, at time.Time) error {
 	return res.Error
 }
 
-// APITokenByTokenHash looks up a personal token by auth.HashToken(value).// It does not check RevokedAt; callers do.
+// APITokensOf returns a user's personal tokens, oldest first, revoked ones included.
+func (s *Store) APITokensOf(userID uint) ([]APIToken, error) {
+	var tokens []APIToken
+	if err := s.db.Where("user_id = ?", userID).Order("id").Find(&tokens).Error; err != nil {
+		return nil, err
+	}
+	return tokens, nil
+}
+
+// APITokenByTokenHash looks up a personal token by auth.HashToken(value).
+// It does not check RevokedAt; callers do.
 func (s *Store) APITokenByTokenHash(hash string) (*APIToken, error) {
 	var t APIToken
 	if err := s.db.Where("token_hash = ?", hash).First(&t).Error; err != nil {
