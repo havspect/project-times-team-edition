@@ -58,7 +58,7 @@ func newHarness(t *testing.T) *harness {
 	return &harness{h: New(st, clk), st: st, clock: clk, user: u, password: password}
 }
 
-func (h *harness) do(method, path string, body any, headers map[string]string, cookie string) *httptest.ResponseRecorder {
+func (h *harness) request(method, path string, body any, headers map[string]string) *http.Request {
 	var buf bytes.Buffer
 	if body != nil {
 		if err := json.NewEncoder(&buf).Encode(body); err != nil {
@@ -72,12 +72,21 @@ func (h *harness) do(method, path string, body any, headers map[string]string, c
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	if cookie != "" {
-		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
-	}
+	return req
+}
+
+func (h *harness) send(req *http.Request) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	h.h.ServeHTTP(rec, req)
 	return rec
+}
+
+func (h *harness) do(method, path string, body any, headers map[string]string, cookie string) *httptest.ResponseRecorder {
+	req := h.request(method, path, body, headers)
+	if cookie != "" {
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	}
+	return h.send(req)
 }
 
 func (h *harness) login(email, password string) *httptest.ResponseRecorder {
@@ -85,14 +94,21 @@ func (h *harness) login(email, password string) *httptest.ResponseRecorder {
 		map[string]string{"email": email, "password": password}, nil, "")
 }
 
+func (h *harness) loginFrom(remoteAddr, email, password string) *httptest.ResponseRecorder {
+	req := h.request(http.MethodPost, "/api/v1/auth/login",
+		map[string]string{"email": email, "password": password}, nil)
+	req.RemoteAddr = remoteAddr
+	return h.send(req)
+}
+
 func sessionOf(t *testing.T, rec *httptest.ResponseRecorder) *http.Cookie {
 	t.Helper()
 	for _, c := range (&http.Response{Header: rec.Header()}).Cookies() {
-		if c.Name == sessionCookie {
+		if c.Name == sessionCookie || c.Name == secureSessionCookie {
 			return c
 		}
 	}
-	t.Fatalf("no %s cookie in %v", sessionCookie, rec.Header().Values("Set-Cookie"))
+	t.Fatalf("no session cookie in %v", rec.Header().Values("Set-Cookie"))
 	return nil
 }
 
@@ -138,14 +154,22 @@ func TestLogin(t *testing.T) {
 
 func TestLoginSecureCookie(t *testing.T) {
 	h := newHarness(t)
+	https := map[string]string{"X-Forwarded-Proto": "https, http"}
 	rec := h.do(http.MethodPost, "/api/v1/auth/login",
-		map[string]string{"email": h.user.Email, "password": h.password},
-		map[string]string{"X-Forwarded-Proto": "https"}, "")
+		map[string]string{"email": h.user.Email, "password": h.password}, https, "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
 	}
-	if c := sessionOf(t, rec); !c.Secure {
-		t.Fatal("cookie is not Secure despite an https request")
+	c := sessionOf(t, rec)
+	if c.Name != secureSessionCookie || !c.Secure {
+		t.Fatalf("cookie = %+v, want a Secure %s", c, secureSessionCookie)
+	}
+
+	// The middleware accepts the secure name and authenticates with it.
+	req := h.request(http.MethodGet, "/api/v1/me", nil, https)
+	req.AddCookie(&http.Cookie{Name: c.Name, Value: c.Value})
+	if rec := h.send(req); rec.Code != http.StatusOK {
+		t.Fatalf("status with secure cookie = %d, want 200: %s", rec.Code, rec.Body)
 	}
 }
 
@@ -164,7 +188,7 @@ func TestLoginRejected(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			h := newHarness(t)
 			if tt.deactivate {
-				if err := h.st.DB().Model(&store.User{}).Where("id = ?", h.user.ID).Update("active", false).Error; err != nil {
+				if err := h.st.SetUserActive(h.user.ID, false); err != nil {
 					t.Fatalf("deactivate: %v", err)
 				}
 			}
@@ -216,6 +240,12 @@ func TestMe(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status with expired session = %d, want 401", rec.Code)
 	}
+	if clear := sessionOf(t, rec); clear.Value != "" || clear.MaxAge >= 0 {
+		t.Fatalf("clearing cookie = %+v, want empty value and MaxAge < 0", clear)
+	}
+	if _, err := h.st.SessionByTokenHash(auth.HashToken(c.Value)); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expired session lookup = %v, want ErrNotFound (the row must be deleted)", err)
+	}
 }
 
 func TestLogout(t *testing.T) {
@@ -264,6 +294,85 @@ func TestUnknownPathIsNotFound(t *testing.T) {
 	}
 }
 
+func TestLoginRateLimit(t *testing.T) {
+	h := newHarness(t)
+	const ip = "203.0.113.7:4444"
+	for i := 0; i < loginLimit; i++ {
+		if rec := h.loginFrom(ip, h.user.Email, h.password); rec.Code != http.StatusOK {
+			t.Fatalf("attempt %d = %d, want 200 (a success still spends an attempt): %s", i+1, rec.Code, rec.Body)
+		}
+	}
+
+	rec := h.loginFrom(ip, h.user.Email, h.password)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status over the limit = %d, want 429: %s", rec.Code, rec.Body)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/problem+json") {
+		t.Fatalf("content type = %q, want application/problem+json", ct)
+	}
+	if body := decode[struct {
+		Type string `json:"type"`
+	}](t, rec); body.Type != urnRateLimited {
+		t.Fatalf("type = %q, want %q", body.Type, urnRateLimited)
+	}
+
+	if rec := h.loginFrom("203.0.113.8:4444", h.user.Email, h.password); rec.Code != http.StatusOK {
+		t.Fatalf("status for another IP = %d, want 200: %s", rec.Code, rec.Body)
+	}
+
+	h.clock.now = h.clock.now.Add(loginWindow)
+	if rec := h.loginFrom(ip, h.user.Email, h.password); rec.Code != http.StatusOK {
+		t.Fatalf("status after the window = %d, want 200: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestDeactivatedUserSessionIsRejected(t *testing.T) {
+	h := newHarness(t)
+	c := sessionOf(t, h.login(h.user.Email, h.password))
+	if err := h.st.SetUserActive(h.user.ID, false); err != nil {
+		t.Fatalf("deactivate: %v", err)
+	}
+	rec := h.do(http.MethodGet, "/api/v1/me", nil, nil, c.Value)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status with a live session after deactivation = %d, want 401: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestStoreFailureIsInternalError(t *testing.T) {
+	t.Run("login", func(t *testing.T) {
+		h := newHarness(t)
+		if err := h.st.Close(); err != nil {
+			t.Fatalf("close store: %v", err)
+		}
+		rec := h.login(h.user.Email, h.password)
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want 500 (a broken database is not a wrong password): %s", rec.Code, rec.Body)
+		}
+		if body := decode[struct {
+			Type string `json:"type"`
+		}](t, rec); body.Type != urnInternal {
+			t.Fatalf("type = %q, want %q", body.Type, urnInternal)
+		}
+	})
+
+	t.Run("me", func(t *testing.T) {
+		h := newHarness(t)
+		c := sessionOf(t, h.login(h.user.Email, h.password))
+		if err := h.st.Close(); err != nil {
+			t.Fatalf("close store: %v", err)
+		}
+		rec := h.do(http.MethodGet, "/api/v1/me", nil, nil, c.Value)
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want 500 (a broken database is not an anonymous request): %s", rec.Code, rec.Body)
+		}
+		if body := decode[struct {
+			Type string `json:"type"`
+		}](t, rec); body.Type != urnInternal {
+			t.Fatalf("type = %q, want %q", body.Type, urnInternal)
+		}
+	})
+}
+
 func TestSpecListsAuthRoutes(t *testing.T) {
 	rec := get(t, "/api/v1/openapi.json")
 	if rec.Code != http.StatusOK {
@@ -275,14 +384,17 @@ func TestSpecListsAuthRoutes(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	want := [][2]string{
+	want := []struct {
+		method string
+		path   string
+	}{
 		{"post", "/api/v1/auth/login"},
 		{"post", "/api/v1/auth/logout"},
 		{"get", "/api/v1/me"},
 	}
 	for _, w := range want {
-		if doc.Paths[w[1]][w[0]] == nil {
-			t.Errorf("spec is missing %s %s", strings.ToUpper(w[0]), w[1])
+		if doc.Paths[w.path][w.method] == nil {
+			t.Errorf("spec is missing %s %s", strings.ToUpper(w.method), w.path)
 		}
 	}
 }

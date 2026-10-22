@@ -1,3 +1,4 @@
+// Package auth hashes passwords with argon2id and tokens with SHA-256.
 package auth
 
 import (

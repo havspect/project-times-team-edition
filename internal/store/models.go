@@ -2,6 +2,7 @@ package store
 
 import "time"
 
+// User is a person who can log in; Email is stored lowercased.
 type User struct {
 	ID           uint   `gorm:"primarykey"`
 	Email        string `gorm:"uniqueIndex;not null"`
@@ -14,6 +15,7 @@ type User struct {
 	UpdatedAt    time.Time
 }
 
+// Session is a login session, stored as a hash of its opaque token.
 type Session struct {
 	ID        uint      `gorm:"primarykey"`
 	UserID    uint      `gorm:"index;not null"`

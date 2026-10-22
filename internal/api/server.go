@@ -1,6 +1,9 @@
+// Package api wires the HTTP surface: Huma operations over net/http, the session
+// middleware, the generated OpenAPI contract, and /healthz.
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -18,9 +21,12 @@ const (
 	openAPIPath = apiPrefix + "/openapi"
 )
 
+// Server is the state the handlers share: the store, the injected clock, and the
+// in-memory login limiter.
 type Server struct {
 	Store *store.Store
 	Clock clock.Clock
+	limit loginLimiter
 }
 
 // New returns the http.Handler for the whole API and web surface.
@@ -54,5 +60,9 @@ func Spec() ([]byte, error) {
 
 func health(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"status":"ok","schema_version":%d}`, store.SchemaVersion)
+	// Nothing to do if the write fails: the status and headers are already sent.
+	_ = json.NewEncoder(w).Encode(struct {
+		Status        string `json:"status"`
+		SchemaVersion int    `json:"schema_version"`
+	}{"ok", store.SchemaVersion})
 }

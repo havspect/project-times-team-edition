@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -29,7 +31,7 @@ func (s *Server) routes(api huma.API) {
 		Method:      http.MethodPost,
 		Path:        apiPrefix + "/auth/login",
 		Tags:        []string{"auth"},
-		Errors:      []int{http.StatusUnauthorized, http.StatusUnprocessableEntity},
+		Errors:      []int{http.StatusUnauthorized, http.StatusUnprocessableEntity, http.StatusTooManyRequests, http.StatusInternalServerError},
 	}, s.login)
 
 	huma.Register(api, huma.Operation{
@@ -38,7 +40,7 @@ func (s *Server) routes(api huma.API) {
 		Path:          apiPrefix + "/auth/logout",
 		Tags:          []string{"auth"},
 		DefaultStatus: http.StatusNoContent,
-		Errors:        []int{http.StatusUnauthorized, http.StatusForbidden},
+		Errors:        []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusInternalServerError},
 	}, s.logout)
 
 	huma.Register(api, huma.Operation{
@@ -46,7 +48,7 @@ func (s *Server) routes(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        apiPrefix + "/me",
 		Tags:        []string{"me"},
-		Errors:      []int{http.StatusUnauthorized},
+		Errors:      []int{http.StatusUnauthorized, http.StatusInternalServerError},
 	}, s.me)
 }
 
@@ -63,13 +65,25 @@ type loginOutput struct {
 }
 
 func (s *Server) login(ctx context.Context, in *loginInput) (*loginOutput, error) {
-	u, lookupErr := s.Store.UserByEmail(in.Body.Email)
+	r := requestFrom(ctx).Request
+	if !s.limit.allow(clientIP(r), s.Clock.Now()) {
+		return nil, problem(http.StatusTooManyRequests, urnRateLimited, "too many login attempts, try again later")
+	}
+
+	u, err := s.Store.UserByEmail(in.Body.Email)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		// Unknown email: keep going so one Argon2 run happens either way.
+	case err != nil:
+		slog.Error("login lookup", "error", err)
+		return nil, problem(http.StatusInternalServerError, urnInternal, "internal error")
+	}
 	passwordHash := dummyPasswordHash
-	if lookupErr == nil {
+	if u != nil {
 		passwordHash = u.PasswordHash
 	}
 	ok := auth.VerifyPassword(passwordHash, in.Body.Password)
-	if lookupErr != nil || !ok || !u.Active {
+	if u == nil || !ok || !u.Active {
 		return nil, problem(http.StatusUnauthorized, urnInvalidCredentials, "email or password is incorrect")
 	}
 
@@ -82,7 +96,7 @@ func (s *Server) login(ctx context.Context, in *loginInput) (*loginOutput, error
 		return nil, err
 	}
 	return &loginOutput{
-		SetCookie: cookie(sessionCookie, token, expires, requestFrom(ctx).Request),
+		SetCookie: cookie(sessionCookieName(r), token, expires, r),
 		Body:      meOf(u),
 	}, nil
 }
@@ -101,12 +115,7 @@ func (s *Server) logout(ctx context.Context, _ *struct{}) (*logoutOutput, error)
 			return nil, err
 		}
 	}
-	clear := &http.Cookie{
-		Name: sessionCookie, Path: "/", MaxAge: -1,
-		Expires:  time.Unix(0, 0),
-		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: isHTTPS(ri.Request),
-	}
-	return &logoutOutput{SetCookie: clear.String()}, nil
+	return &logoutOutput{SetCookie: clearCookie(ri.CookieName, ri.Request).String()}, nil
 }
 
 type meOutput struct{ Body meResponse }

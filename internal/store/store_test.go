@@ -2,7 +2,10 @@ package store
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -137,5 +140,70 @@ func TestSessionLifecycle(t *testing.T) {
 	}
 	if _, err := s.SessionByTokenHash("abc123"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("after delete: got %v, want ErrNotFound", err)
+	}
+}
+
+func TestNewDatabaseFileMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX file modes")
+	}
+	path := filepath.Join(t.TempDir(), "times.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Errorf("new database mode = %o, want 600", got)
+	}
+}
+
+func TestSQLitePragmas(t *testing.T) {
+	s := openTestStore(t)
+
+	var busyTimeout int
+	if err := s.db.Raw("PRAGMA busy_timeout").Row().Scan(&busyTimeout); err != nil {
+		t.Fatalf("busy_timeout: %v", err)
+	}
+	if busyTimeout != 10000 {
+		t.Errorf("busy_timeout = %d, want 10000", busyTimeout)
+	}
+
+	var journalMode string
+	if err := s.db.Raw("PRAGMA journal_mode").Row().Scan(&journalMode); err != nil {
+		t.Fatalf("journal_mode: %v", err)
+	}
+	if !strings.EqualFold(journalMode, "wal") {
+		t.Errorf("journal_mode = %q, want wal", journalMode)
+	}
+}
+
+func TestSetUserActive(t *testing.T) {
+	s := openTestStore(t)
+	u := &User{Email: "ada@example.com", Name: "Ada", PasswordHash: "x"}
+	if err := s.CreateUser(u); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	for _, active := range []bool{false, true} {
+		if err := s.SetUserActive(u.ID, active); err != nil {
+			t.Fatalf("SetUserActive(%d, %t): %v", u.ID, active, err)
+		}
+		got, err := s.UserByID(u.ID)
+		if err != nil {
+			t.Fatalf("by id: %v", err)
+		}
+		if got.Active != active {
+			t.Errorf("SetUserActive(%d, %t): Active = %t", u.ID, active, got.Active)
+		}
+	}
+
+	if err := s.SetUserActive(999, false); !errors.Is(err, ErrNotFound) {
+		t.Errorf("SetUserActive(unknown) = %v, want ErrNotFound", err)
 	}
 }

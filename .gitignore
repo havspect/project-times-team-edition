@@ -1,4 +1,6 @@
 /times
 *.db
+*.db-wal
+*.db-shm
 web/dist/
 web/src/lib/api/
