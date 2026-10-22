@@ -21,6 +21,19 @@ func NewSessionToken() (token, hash string, err error) {
 	return token, HashToken(token), nil
 }
 
+// apiTokenPrefix marks personal tokens, so a leaked string is recognizable.
+const apiTokenPrefix = "ts_"
+
+// NewAPIToken returns the personal token to show once and the hash to store.
+func NewAPIToken() (token, hash string, err error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", "", err
+	}
+	token = apiTokenPrefix + base64.RawURLEncoding.EncodeToString(b)
+	return token, HashToken(token), nil
+}
+
 // HashToken is how a presented token is looked up: sessions and API tokens are stored hashed.
 func HashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))

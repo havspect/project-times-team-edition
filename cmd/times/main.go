@@ -42,12 +42,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	case "admin":
 		return admin(args[1:], stdout, stderr)
+	case "login":
+		return login(args[1:], stdout, stderr)
 	}
 
 	return usage(stderr)
 }
 
 func usage(stderr io.Writer) int {
-	fmt.Fprintln(stderr, "usage: times <version|serve|openapi|admin>")
+	fmt.Fprintln(stderr, "usage: times <version|serve|openapi|admin|login>")
 	return 2
 }
