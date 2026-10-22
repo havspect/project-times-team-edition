@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 
 	"github.com/havspect/project-times/internal/store"
@@ -54,11 +53,4 @@ func (s *Server) requireTeamManager(ctx context.Context, teamID uint) (*store.Us
 		return nil, problem(http.StatusForbidden, urnForbidden, "you do not lead this team")
 	}
 	return u, nil
-}
-
-// internal logs a store failure and answers 500, so a broken database never
-// looks like a permission decision.
-func internal(err error) error {
-	slog.Error("store", "error", err)
-	return problem(http.StatusInternalServerError, urnInternal, "internal error")
 }

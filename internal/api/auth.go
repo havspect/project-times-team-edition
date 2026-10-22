@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 	"time"
 
@@ -82,8 +81,7 @@ func (s *Server) login(ctx context.Context, in *loginInput) (*loginOutput, error
 	case errors.Is(err, store.ErrNotFound):
 		// Unknown email: keep going so one Argon2 run happens either way.
 	case err != nil:
-		slog.Error("login lookup", "error", err)
-		return nil, problem(http.StatusInternalServerError, urnInternal, "internal error")
+		return nil, internal(err)
 	}
 	passwordHash := dummyPasswordHash
 	if u != nil {
@@ -96,11 +94,11 @@ func (s *Server) login(ctx context.Context, in *loginInput) (*loginOutput, error
 
 	token, tokenHash, err := auth.NewSessionToken()
 	if err != nil {
-		return nil, err
+		return nil, internal(err)
 	}
 	expires := s.Clock.Now().Add(auth.SessionTTL)
 	if err := s.Store.CreateSession(&store.Session{UserID: u.ID, TokenHash: tokenHash, ExpiresAt: expires}); err != nil {
-		return nil, err
+		return nil, internal(err)
 	}
 	body, err := s.meOf(u)
 	if err != nil {
@@ -123,7 +121,7 @@ func (s *Server) logout(ctx context.Context, _ *struct{}) (*logoutOutput, error)
 	}
 	if ri.Session != nil {
 		if err := s.Store.DeleteSession(ri.Session.ID); err != nil {
-			return nil, err
+			return nil, internal(err)
 		}
 	}
 	return &logoutOutput{SetCookie: clearCookie(ri.CookieName, ri.Request).String()}, nil

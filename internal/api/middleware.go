@@ -56,7 +56,7 @@ func (s *Server) withRequest(next http.Handler) http.Handler {
 		if token, ok := bearerToken(r); ok {
 			if err := s.applyToken(ri, token); err != nil {
 				slog.Error("token auth", "error", err)
-				writeProblem(w, problem(http.StatusInternalServerError, urnInternal, "internal error"))
+				writeProblem(w, internal(err))
 				return
 			}
 		} else if name, value, ok := sessionToken(r); ok {
@@ -67,7 +67,7 @@ func (s *Server) withRequest(next http.Handler) http.Handler {
 				// Stale cookie: continue as anonymous.
 			case err != nil:
 				slog.Error("session lookup", "error", err)
-				writeProblem(w, problem(http.StatusInternalServerError, urnInternal, "internal error"))
+				writeProblem(w, internal(err))
 				return
 			case !s.Clock.Now().Before(sess.ExpiresAt):
 				s.expireSession(w, name, sess.ID, r)
@@ -78,7 +78,7 @@ func (s *Server) withRequest(next http.Handler) http.Handler {
 					// The user is gone: continue as anonymous.
 				case err != nil:
 					slog.Error("session user lookup", "error", err)
-					writeProblem(w, problem(http.StatusInternalServerError, urnInternal, "internal error"))
+					writeProblem(w, internal(err))
 					return
 				case u.Active:
 					ri.User, ri.Session, ri.Cookie = u, sess, true

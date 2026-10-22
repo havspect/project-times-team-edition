@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
@@ -157,11 +156,8 @@ func (s *Server) renameTeam(ctx context.Context, in *teamRenameInput) (*teamOutp
 		return nil, err
 	}
 	team, err := s.Store.RenameTeam(in.ID, in.Body.Name, s.Clock.Now())
-	if errors.Is(err, store.ErrNotFound) {
-		return nil, problem(http.StatusNotFound, urnNotFound, "team not found")
-	}
 	if err != nil {
-		return nil, internal(err)
+		return nil, fail(err)
 	}
 	members, err := s.Store.MembersOf(team.ID)
 	if err != nil {
@@ -175,11 +171,8 @@ func (s *Server) archiveTeam(ctx context.Context, in *teamIDInput) (*struct{}, e
 		return nil, err
 	}
 	err := s.Store.ArchiveTeam(in.ID, s.Clock.Now())
-	if errors.Is(err, store.ErrNotFound) {
-		return nil, problem(http.StatusNotFound, urnNotFound, "team not found")
-	}
 	if err != nil {
-		return nil, internal(err)
+		return nil, fail(err)
 	}
 	return nil, nil
 }
@@ -198,13 +191,8 @@ func (s *Server) replaceMembers(ctx context.Context, in *teamMembersInput) (*tea
 		members = append(members, store.MemberRole{UserID: m.UserID, Role: m.Role})
 	}
 	err := s.Store.ReplaceMemberships(in.ID, members, s.Clock.Now())
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		return nil, problem(http.StatusNotFound, urnNotFound, "team not found")
-	case errors.Is(err, store.ErrUnknownUser):
-		return nil, problem(http.StatusUnprocessableEntity, urnInvalidInput, "unknown user_id")
-	case err != nil:
-		return nil, internal(err)
+	if err != nil {
+		return nil, fail(err)
 	}
 	rows, err := s.Store.MembersOf(in.ID)
 	if err != nil {
