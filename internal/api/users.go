@@ -1,6 +1,258 @@
 package api
 
-import "github.com/danielgtaylor/huma/v2"
+import (
+	"context"
+	"errors"
+	"net/http"
+	"time"
+
+	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/havspect/project-times/internal/auth"
+	"github.com/havspect/project-times/internal/store"
+)
+
+// userResponse is a user as the admin screens see it; never includes the hash.
+type userResponse struct {
+	ID                 uint   `json:"id"`
+	Email              string `json:"email"`
+	Name               string `json:"name"`
+	Timezone           string `json:"timezone"`
+	IsAdmin            bool   `json:"is_admin"`
+	Active             bool   `json:"active"`
+	MustChangePassword bool   `json:"must_change_password"`
+}
 
 // userRoutes registers the user administration and password endpoints.
-func (s *Server) userRoutes(api huma.API) {}
+func (s *Server) userRoutes(api huma.API) {
+	huma.Register(api, huma.Operation{
+		OperationID: "users-list",
+		Method:      http.MethodGet,
+		Path:        apiPrefix + "/users",
+		Tags:        []string{"users"},
+		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusInternalServerError},
+	}, s.listUsers)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "users-create",
+		Method:        http.MethodPost,
+		Path:          apiPrefix + "/users",
+		Tags:          []string{"users"},
+		DefaultStatus: http.StatusCreated,
+		Errors:        []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusUnprocessableEntity, http.StatusInternalServerError},
+	}, s.createUser)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "users-update",
+		Method:      http.MethodPatch,
+		Path:        apiPrefix + "/users/{id}",
+		Tags:        []string{"users"},
+		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusInternalServerError},
+	}, s.updateUser)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "users-reset-password",
+		Method:      http.MethodPost,
+		Path:        apiPrefix + "/users/{id}/password",
+		Tags:        []string{"users"},
+		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusInternalServerError},
+	}, s.resetUserPassword)
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "me-password",
+		Method:        http.MethodPost,
+		Path:          apiPrefix + "/me/password",
+		Tags:          []string{"users"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusUnprocessableEntity, http.StatusInternalServerError},
+	}, s.changePassword)
+}
+
+type listUsersOutput struct{ Body []userResponse }
+
+func (s *Server) listUsers(ctx context.Context, _ *struct{}) (*listUsersOutput, error) {
+	if _, err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	users, err := s.Store.ListUsers()
+	if err != nil {
+		return nil, internal(err)
+	}
+	out := make([]userResponse, 0, len(users))
+	for i := range users {
+		out = append(out, userOf(&users[i]))
+	}
+	return &listUsersOutput{Body: out}, nil
+}
+
+type createUserInput struct {
+	Body struct {
+		Email    string `json:"email" required:"true" format:"email"`
+		Name     string `json:"name" required:"true" minLength:"1"`
+		Timezone string `json:"timezone" required:"true" minLength:"1"`
+		IsAdmin  bool   `json:"is_admin,omitempty"`
+	}
+}
+
+// createdUser carries the initial password, which is shown only in this response.
+type createdUser struct {
+	userResponse
+	InitialPassword string `json:"initial_password"`
+}
+
+type createUserOutput struct{ Body createdUser }
+
+func (s *Server) createUser(ctx context.Context, in *createUserInput) (*createUserOutput, error) {
+	if _, err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	if err := validateTimezone(in.Body.Timezone); err != nil {
+		return nil, err
+	}
+	password, err := auth.GeneratePassword()
+	if err != nil {
+		return nil, internal(err)
+	}
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return nil, internal(err)
+	}
+	u := &store.User{
+		Email: in.Body.Email, Name: in.Body.Name, Timezone: in.Body.Timezone,
+		PasswordHash: hash, IsAdmin: in.Body.IsAdmin, Active: true, MustChangePassword: true,
+	}
+	if err := s.Store.CreateUser(u); err != nil {
+		// The unique index is the only reason a fresh email fails, so report that as input.
+		if _, lookup := s.Store.UserByEmail(in.Body.Email); lookup == nil {
+			return nil, problem(http.StatusUnprocessableEntity, urnInvalidInput, "email is already in use")
+		}
+		return nil, internal(err)
+	}
+	return &createUserOutput{Body: createdUser{userResponse: userOf(u), InitialPassword: password}}, nil
+}
+
+type updateUserInput struct {
+	ID   uint `path:"id"`
+	Body struct {
+		Name     *string `json:"name,omitempty" minLength:"1"`
+		Timezone *string `json:"timezone,omitempty" minLength:"1"`
+		IsAdmin  *bool   `json:"is_admin,omitempty"`
+		Active   *bool   `json:"active,omitempty"`
+	}
+}
+
+type userOutput struct{ Body userResponse }
+
+func (s *Server) updateUser(ctx context.Context, in *updateUserInput) (*userOutput, error) {
+	if _, err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	u, err := s.Store.UserByID(in.ID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return nil, problem(http.StatusNotFound, urnNotFound, "no such user")
+	case err != nil:
+		return nil, internal(err)
+	}
+
+	if in.Body.Name != nil {
+		u.Name = *in.Body.Name
+	}
+	if in.Body.Timezone != nil {
+		if err := validateTimezone(*in.Body.Timezone); err != nil {
+			return nil, err
+		}
+		u.Timezone = *in.Body.Timezone
+	}
+	if in.Body.IsAdmin != nil {
+		u.IsAdmin = *in.Body.IsAdmin
+	}
+	if in.Body.Active != nil {
+		u.Active = *in.Body.Active
+		// stage 3: deactivating also stops the running entry here, with the note "stopped on deactivation".
+	}
+
+	switch err := s.Store.SaveUser(u); {
+	case errors.Is(err, store.ErrLastAdmin):
+		return nil, problem(http.StatusUnprocessableEntity, urnLastAdmin, "the last active admin cannot be demoted or deactivated")
+	case errors.Is(err, store.ErrNotFound):
+		return nil, problem(http.StatusNotFound, urnNotFound, "no such user")
+	case err != nil:
+		return nil, internal(err)
+	}
+	return &userOutput{Body: userOf(u)}, nil
+}
+
+type resetPasswordInput struct {
+	ID uint `path:"id"`
+}
+
+type resetPasswordOutput struct {
+	Body struct {
+		InitialPassword string `json:"initial_password"`
+	}
+}
+
+func (s *Server) resetUserPassword(ctx context.Context, in *resetPasswordInput) (*resetPasswordOutput, error) {
+	if _, err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
+	password, err := auth.GeneratePassword()
+	if err != nil {
+		return nil, internal(err)
+	}
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return nil, internal(err)
+	}
+	if err := s.Store.SetUserPassword(in.ID, hash, true); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, problem(http.StatusNotFound, urnNotFound, "no such user")
+		}
+		return nil, internal(err)
+	}
+	out := &resetPasswordOutput{}
+	out.Body.InitialPassword = password
+	return out, nil
+}
+
+type changePasswordInput struct {
+	Body struct {
+		CurrentPassword string `json:"current_password" required:"true" minLength:"1"`
+		NewPassword     string `json:"new_password" required:"true" minLength:"8"`
+	}
+}
+
+func (s *Server) changePassword(ctx context.Context, in *changePasswordInput) (*struct{}, error) {
+	u, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !auth.VerifyPassword(u.PasswordHash, in.Body.CurrentPassword) {
+		return nil, problem(http.StatusUnprocessableEntity, urnInvalidInput, "current password is incorrect")
+	}
+	hash, err := auth.HashPassword(in.Body.NewPassword)
+	if err != nil {
+		return nil, internal(err)
+	}
+	if err := s.Store.SetUserPassword(u.ID, hash, false); err != nil {
+		return nil, internal(err)
+	}
+	return &struct{}{}, nil
+}
+
+// userOf maps a stored user to the API response, leaving out the password hash.
+func userOf(u *store.User) userResponse {
+	return userResponse{
+		ID: u.ID, Email: u.Email, Name: u.Name, Timezone: u.Timezone,
+		IsAdmin: u.IsAdmin, Active: u.Active, MustChangePassword: u.MustChangePassword,
+	}
+}
+
+// validateTimezone rejects a name time.LoadLocation does not know.
+func validateTimezone(tz string) error {
+	if _, err := time.LoadLocation(tz); err != nil {
+		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "unknown timezone "+tz)
+	}
+	return nil
+}
