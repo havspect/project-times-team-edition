@@ -52,10 +52,11 @@ Rules the store enforces, with tests:
 - Start and end may not be more than 5 minutes in the future.
 - Overlapping entries are allowed. The timeline marks them; the API does not reject them, because parallel work is real.
 - Entries may span midnight; reports split them at the subject's local midnight.
-- Archived projects reject new entries but keep existing ones. Archiving a team archives its projects in the same step; the membership rows stay but grant nothing.
+- Archived projects reject new entries but keep existing ones. Archiving a team archives its projects in the same step; the membership rows stay but grant nothing. A project of an archived team cannot be restored (`422 invalid-input`) until the team is live again.
 - A project's team cannot change once the project has entries (`422 project-has-entries`); while empty it can.
 - Deactivated users cannot log in or use tokens; their hours stay. Deactivating a user stops their running entry at that instant, with the note `stopped on deactivation`.
 - A user created or reset by an admin carries `must_change_password`; until it clears, only `/me`, `/me/password` and `/auth/logout` work (`403 password-change-required`).
+- A password change or reset ends every other login of that user in the same transaction: the sessions are deleted and every live token is revoked. A self-change keeps only the session that made it, so a token client logs in again.
 - The last active admin cannot be demoted or deactivated (`422 last-admin`).
 - Deleting an entry sets `deleted_at`; restoring clears it. No hard deletes anywhere.
 

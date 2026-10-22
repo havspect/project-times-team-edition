@@ -260,6 +260,35 @@ func TestProjectArchiveRestore(t *testing.T) {
 	if got, err := f.st.ProjectByID(f.ProjectA.ID); err != nil || got.ArchivedAt != nil {
 		t.Fatalf("restore not stored: %+v, %v", got, err)
 	}
+
+	// Archiving the team archives its projects, and neither restore path may revive
+	// one inside a team that grants nothing.
+	if rec := f.teamRequest(t, f.Admin, http.MethodDelete, teamPath(fmt.Sprintf("/%d", f.TeamA.ID)), nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("archive TeamA = %d, want 204: %s", rec.Code, rec.Body)
+	}
+	for _, tc := range []struct {
+		name   string
+		method string
+		path   string
+		body   any
+	}{
+		{"patch unarchive", http.MethodPatch, projectPath(f.ProjectA.ID), map[string]any{"archived": false}},
+		{"restore", http.MethodPost, projectPath(f.ProjectA.ID) + "/restore", nil},
+	} {
+		rec := f.do(tc.method, tc.path, tc.body, origin, f.as(t, f.Admin))
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("%s in an archived team = %d, want 422: %s", tc.name, rec.Code, rec.Body)
+			continue
+		}
+		if body := decode[struct {
+			Type string `json:"type"`
+		}](t, rec); body.Type != urnInvalidInput {
+			t.Errorf("%s type = %q, want %q", tc.name, body.Type, urnInvalidInput)
+		}
+	}
+	if got, err := f.st.ProjectByID(f.ProjectA.ID); err != nil || got.ArchivedAt == nil {
+		t.Fatalf("project revived in an archived team: %+v, %v", got, err)
+	}
 }
 
 func TestProjectNotFound(t *testing.T) {

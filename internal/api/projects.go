@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
@@ -147,11 +146,8 @@ func (s *Server) patchProject(ctx context.Context, in *projectPatchInput) (*proj
 		return nil, err
 	}
 	p, err := s.Store.ProjectByID(in.ID)
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		return nil, problem(http.StatusNotFound, urnNotFound, "project not found")
-	case err != nil:
-		return nil, internal(err)
+	if err != nil {
+		return nil, fail(err)
 	}
 	ok, err := s.canManageTeam(u, p.TeamID)
 	if err != nil {
@@ -184,6 +180,10 @@ func (s *Server) patchProject(ctx context.Context, in *projectPatchInput) (*proj
 			at := s.Clock.Now()
 			p.ArchivedAt = &at
 		} else {
+			// A project must not come back to life inside an archived team.
+			if err := s.requireProjectTeam(p.TeamID); err != nil {
+				return nil, err
+			}
 			p.ArchivedAt = nil
 		}
 	}
@@ -208,15 +208,16 @@ func (s *Server) restoreProject(ctx context.Context, in *projectRestoreInput) (*
 		return nil, err
 	}
 	p, err := s.Store.ProjectByID(in.ID)
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		return nil, problem(http.StatusNotFound, urnNotFound, "project not found")
-	case err != nil:
-		return nil, internal(err)
+	if err != nil {
+		return nil, fail(err)
+	}
+	// A project must not come back to life inside an archived team.
+	if err := s.requireProjectTeam(p.TeamID); err != nil {
+		return nil, err
 	}
 	p.ArchivedAt = nil
 	if err := s.Store.UpdateProject(p); err != nil {
-		return nil, internal(err)
+		return nil, fail(err)
 	}
 	return &projectOutput{Body: projectResponseOf(p)}, nil
 }
