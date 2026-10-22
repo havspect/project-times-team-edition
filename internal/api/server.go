@@ -39,7 +39,7 @@ func New(st *store.Store, clk clock.Clock) http.Handler {
 
 	s := &Server{Store: st, Clock: clk}
 	s.routes(api)
-	return mux
+	return s.withRequest(mux)
 }
 
 // Spec returns the generated OpenAPI document, for `times openapi`.
@@ -51,9 +51,6 @@ func Spec() ([]byte, error) {
 	}
 	return rec.Body.Bytes(), nil
 }
-
-// routes is where commit 5 registers its auth and API operations.
-func (s *Server) routes(api huma.API) {}
 
 func health(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
