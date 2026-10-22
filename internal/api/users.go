@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
@@ -122,11 +121,7 @@ func (s *Server) createUser(ctx context.Context, in *createUserInput) (*createUs
 		PasswordHash: hash, IsAdmin: in.Body.IsAdmin, Active: true, MustChangePassword: true,
 	}
 	if err := s.Store.CreateUser(u); err != nil {
-		// The unique index is the only reason a fresh email fails, so report that as input.
-		if _, lookup := s.Store.UserByEmail(in.Body.Email); lookup == nil {
-			return nil, problem(http.StatusUnprocessableEntity, urnInvalidInput, "email is already in use")
-		}
-		return nil, internal(err)
+		return nil, fail(err)
 	}
 	return &createUserOutput{Body: createdUser{userResponse: userOf(u), InitialPassword: password}}, nil
 }
@@ -148,11 +143,8 @@ func (s *Server) updateUser(ctx context.Context, in *updateUserInput) (*userOutp
 		return nil, err
 	}
 	u, err := s.Store.UserByID(in.ID)
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		return nil, problem(http.StatusNotFound, urnNotFound, "no such user")
-	case err != nil:
-		return nil, internal(err)
+	if err != nil {
+		return nil, fail(err)
 	}
 
 	if in.Body.Name != nil {
@@ -172,13 +164,8 @@ func (s *Server) updateUser(ctx context.Context, in *updateUserInput) (*userOutp
 		// stage 3: deactivating also stops the running entry here, with the note "stopped on deactivation".
 	}
 
-	switch err := s.Store.SaveUser(u); {
-	case errors.Is(err, store.ErrLastAdmin):
-		return nil, problem(http.StatusUnprocessableEntity, urnLastAdmin, "the last active admin cannot be demoted or deactivated")
-	case errors.Is(err, store.ErrNotFound):
-		return nil, problem(http.StatusNotFound, urnNotFound, "no such user")
-	case err != nil:
-		return nil, internal(err)
+	if err := s.Store.SaveUser(u); err != nil {
+		return nil, fail(err)
 	}
 	return &userOutput{Body: userOf(u)}, nil
 }
@@ -205,11 +192,8 @@ func (s *Server) resetUserPassword(ctx context.Context, in *resetPasswordInput) 
 	if err != nil {
 		return nil, internal(err)
 	}
-	if err := s.Store.SetUserPassword(in.ID, hash, true); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, problem(http.StatusNotFound, urnNotFound, "no such user")
-		}
-		return nil, internal(err)
+	if err := s.Store.SetUserPassword(in.ID, hash, true, 0, s.Clock.Now()); err != nil {
+		return nil, fail(err)
 	}
 	out := &resetPasswordOutput{}
 	out.Body.InitialPassword = password
@@ -235,7 +219,13 @@ func (s *Server) changePassword(ctx context.Context, in *changePasswordInput) (*
 	if err != nil {
 		return nil, internal(err)
 	}
-	if err := s.Store.SetUserPassword(u.ID, hash, false); err != nil {
+	// The caller keeps the session it is changing the password with; everything
+	// else the old password could reach dies with it.
+	var keep uint
+	if ri := requestFrom(ctx); ri != nil && ri.Session != nil {
+		keep = ri.Session.ID
+	}
+	if err := s.Store.SetUserPassword(u.ID, hash, false, keep, s.Clock.Now()); err != nil {
 		return nil, internal(err)
 	}
 	return &struct{}{}, nil

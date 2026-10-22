@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -43,12 +44,24 @@ func (s *Store) SaveUser(u *User) error {
 	})
 }
 
-// SetUserPassword stores hash and sets must_change_password; an unknown id returns ErrNotFound.
-func (s *Store) SetUserPassword(id uint, hash string, mustChange bool) error {
-	res := s.db.Model(&User{}).Where("id = ?", id).
-		Updates(map[string]any{"password_hash": hash, "must_change_password": mustChange})
-	if res.Error == nil && res.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return res.Error
+// SetUserPassword stores hash and sets must_change_password in one transaction with
+// ending the user's other logins: every session except keepSessionID (0 keeps none)
+// and every token that is not revoked yet. An unknown id returns ErrNotFound.
+func (s *Store) SetUserPassword(id uint, hash string, mustChange bool, keepSessionID uint, at time.Time) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&User{}).Where("id = ?", id).
+			Updates(map[string]any{"password_hash": hash, "must_change_password": mustChange})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		if err := tx.Where("user_id = ? AND id <> ?", id, keepSessionID).
+			Delete(&Session{}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&APIToken{}).Where("user_id = ? AND revoked_at IS NULL", id).
+			Update("revoked_at", at).Error
+	})
 }

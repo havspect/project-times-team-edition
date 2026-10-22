@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"testing"
+	"time"
 )
 
 func addUser(t *testing.T, s *Store, email string, admin bool) *User {
@@ -118,8 +119,25 @@ func TestSaveUserKeepsLastAdmin(t *testing.T) {
 func TestSetUserPassword(t *testing.T) {
 	s := openTestStore(t)
 	u := addUser(t, s, "ada@example.com", false)
+	now := time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC)
+	earlier := now.Add(-time.Hour)
 
-	if err := s.SetUserPassword(u.ID, "newhash", true); err != nil {
+	kept := &Session{UserID: u.ID, TokenHash: "kept", ExpiresAt: now.Add(time.Hour)}
+	dropped := &Session{UserID: u.ID, TokenHash: "dropped", ExpiresAt: now.Add(time.Hour)}
+	for _, sess := range []*Session{kept, dropped} {
+		if err := s.CreateSession(sess); err != nil {
+			t.Fatalf("create session %s: %v", sess.TokenHash, err)
+		}
+	}
+	live := &APIToken{UserID: u.ID, Name: "cli", TokenHash: "live"}
+	old := &APIToken{UserID: u.ID, Name: "old", TokenHash: "old", RevokedAt: &earlier}
+	for _, tok := range []*APIToken{live, old} {
+		if err := s.CreateAPIToken(tok); err != nil {
+			t.Fatalf("create token %s: %v", tok.Name, err)
+		}
+	}
+
+	if err := s.SetUserPassword(u.ID, "newhash", true, kept.ID, now); err != nil {
 		t.Fatalf("SetUserPassword: %v", err)
 	}
 	got, err := s.UserByID(u.ID)
@@ -130,7 +148,30 @@ func TestSetUserPassword(t *testing.T) {
 		t.Fatalf("after reset = %+v, want the new hash and the flag", got)
 	}
 
-	if err := s.SetUserPassword(u.ID, "otherhash", false); err != nil {
+	// Every other session and every live token dies with the old password.
+	if _, err := s.SessionByTokenHash("kept"); err != nil {
+		t.Fatalf("kept session = %v, want it kept", err)
+	}
+	if _, err := s.SessionByTokenHash("dropped"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("dropped session = %v, want ErrNotFound", err)
+	}
+	revoked, err := s.APITokenByTokenHash("live")
+	if err != nil {
+		t.Fatalf("live token: %v", err)
+	}
+	if revoked.RevokedAt == nil || !revoked.RevokedAt.Equal(now) {
+		t.Fatalf("live token revoked_at = %v, want %v", revoked.RevokedAt, now)
+	}
+	untouched, err := s.APITokenByTokenHash("old")
+	if err != nil {
+		t.Fatalf("old token: %v", err)
+	}
+	if untouched.RevokedAt == nil || !untouched.RevokedAt.Equal(earlier) {
+		t.Fatalf("old token revoked_at = %v, want %v untouched", untouched.RevokedAt, earlier)
+	}
+
+	// keepSessionID 0 keeps none, which is what an admin reset uses.
+	if err := s.SetUserPassword(u.ID, "otherhash", false, 0, now); err != nil {
 		t.Fatalf("SetUserPassword: %v", err)
 	}
 	got, err = s.UserByID(u.ID)
@@ -140,8 +181,11 @@ func TestSetUserPassword(t *testing.T) {
 	if got.PasswordHash != "otherhash" || got.MustChangePassword {
 		t.Fatalf("after change = %+v, want the new hash and no flag", got)
 	}
+	if _, err := s.SessionByTokenHash("kept"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("kept session = %v, want ErrNotFound", err)
+	}
 
-	if err := s.SetUserPassword(999, "hash", true); !errors.Is(err, ErrNotFound) {
+	if err := s.SetUserPassword(999, "hash", true, 0, now); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("SetUserPassword(unknown) = %v, want ErrNotFound", err)
 	}
 }

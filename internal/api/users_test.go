@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/havspect/project-times/internal/auth"
 	"github.com/havspect/project-times/internal/store"
 )
 
@@ -350,6 +351,7 @@ func TestLastAdminAllowsChangesWithSecondAdmin(t *testing.T) {
 
 func TestResetUserPassword(t *testing.T) {
 	f := seed(t)
+	session := f.as(t, f.Member)
 	rec := sendAs(t, f, f.Admin, http.MethodPost, fmt.Sprintf("/api/v1/users/%d/password", f.Member.ID), nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
@@ -369,6 +371,12 @@ func TestResetUserPassword(t *testing.T) {
 		t.Fatal("must_change_password = false after a reset")
 	}
 
+	// The reset ends every login the old password could reach, rather than only
+	// confining them: a deleted session answers 401, not 403.
+	if rec := f.do(http.MethodGet, "/api/v1/me", nil, nil, session); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("session after the reset = %d, want 401: %s", rec.Code, rec.Body)
+	}
+
 	if rec := f.login(f.Member.Email, fixturePassword); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("login with the old password = %d, want 401: %s", rec.Code, rec.Body)
 	}
@@ -386,6 +394,14 @@ func TestResetUserPasswordUnknown(t *testing.T) {
 func TestChangeOwnPassword(t *testing.T) {
 	f := seed(t)
 	cookie := f.as(t, f.Member)
+	other := f.as(t, f.Member)
+	token, hash, err := auth.NewAPIToken()
+	if err != nil {
+		t.Fatalf("new token: %v", err)
+	}
+	if err := f.st.CreateAPIToken(&store.APIToken{UserID: f.Member.ID, Name: "cli", TokenHash: hash}); err != nil {
+		t.Fatalf("create token: %v", err)
+	}
 	before, err := f.st.UserByID(f.Member.ID)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
@@ -430,6 +446,18 @@ func TestChangeOwnPassword(t *testing.T) {
 	}
 	if changed.MustChangePassword {
 		t.Fatal("must_change_password = true after changing it")
+	}
+
+	// The session doing the change survives; every other login the old password
+	// could reach is dead.
+	if rec := f.do(http.MethodGet, "/api/v1/me", nil, nil, cookie); rec.Code != http.StatusOK {
+		t.Fatalf("caller session after the change = %d, want 200: %s", rec.Code, rec.Body)
+	}
+	if rec := f.do(http.MethodGet, "/api/v1/me", nil, nil, other); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("other session after the change = %d, want 401: %s", rec.Code, rec.Body)
+	}
+	if rec := f.do(http.MethodGet, "/api/v1/me", nil, map[string]string{"Authorization": "Bearer " + token}, ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("token after the change = %d, want 401: %s", rec.Code, rec.Body)
 	}
 }
 
