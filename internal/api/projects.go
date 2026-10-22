@@ -158,7 +158,13 @@ func (s *Server) patchProject(ctx context.Context, in *projectPatchInput) (*proj
 	}
 	body := in.Body
 	if body.TeamID != nil && *body.TeamID != p.TeamID {
-		// The 422 project-has-entries rule lands with the entries table in stage 3.
+		has, err := s.Store.HasEntries(p.ID)
+		if err != nil {
+			return nil, internal(err)
+		}
+		if has {
+			return nil, problem(http.StatusUnprocessableEntity, urnProjectHasEntries, "a project with entries cannot change team")
+		}
 		if err := s.requireProjectTeam(*body.TeamID); err != nil {
 			return nil, err
 		}

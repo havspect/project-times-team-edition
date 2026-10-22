@@ -22,6 +22,9 @@ const (
 	urnInvalidInput           = "urn:times:error:invalid-input"
 	urnLastAdmin              = "urn:times:error:last-admin"
 	urnPasswordChangeRequired = "urn:times:error:password-change-required"
+	urnTimerAlreadyRunning    = "urn:times:error:timer-already-running"
+	urnEntryTooLong           = "urn:times:error:entry-too-long"
+	urnProjectHasEntries      = "urn:times:error:project-has-entries"
 )
 
 func problem(status int, urn, detail string) *huma.ErrorModel {
@@ -40,6 +43,8 @@ func fail(err error) *huma.ErrorModel {
 		return problem(http.StatusUnprocessableEntity, urnLastAdmin, "the last active admin cannot be demoted or deactivated")
 	case errors.Is(err, store.ErrUnknownUser):
 		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "unknown user")
+	case errors.Is(err, store.ErrEntryRunning):
+		return problem(http.StatusConflict, urnTimerAlreadyRunning, "the user already has a running entry")
 	}
 	return internal(err)
 }

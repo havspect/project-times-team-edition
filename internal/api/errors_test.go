@@ -22,6 +22,7 @@ func TestFail(t *testing.T) {
 		{"duplicate email", store.ErrDuplicateEmail, http.StatusUnprocessableEntity, urnInvalidInput},
 		{"last admin", store.ErrLastAdmin, http.StatusUnprocessableEntity, urnLastAdmin},
 		{"unknown user", fmt.Errorf("%w: 42", store.ErrUnknownUser), http.StatusUnprocessableEntity, urnInvalidInput},
+		{"running entry", store.ErrEntryRunning, http.StatusConflict, urnTimerAlreadyRunning},
 		{"unexpected failure", errors.New("disk is on fire"), http.StatusInternalServerError, urnInternal},
 	}
 	for _, tt := range cases {

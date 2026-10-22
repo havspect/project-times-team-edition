@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/havspect/project-times/internal/store"
 )
@@ -176,6 +177,76 @@ func TestPermissionMatrix(t *testing.T) {
 			path: func(*testing.T, *fixture, *store.User) string { return apiPrefix + "/me" },
 			want: cells{200, 200, 200, 200, 200, 401},
 		},
+		{
+			name: "entries list", method: http.MethodGet,
+			path: func(*testing.T, *fixture, *store.User) string { return apiPrefix + "/entries" },
+			want: cells{200, 200, 200, 200, 200, 401},
+		},
+		{
+			name: "entry create", method: http.MethodPost,
+			path: func(*testing.T, *fixture, *store.User) string { return apiPrefix + "/entries" },
+			body: func(f *fixture) any {
+				return map[string]any{
+					"project_id": f.ProjectA.ID,
+					"start_at":   f.clock.now.Add(-2 * time.Hour),
+					"end_at":     f.clock.now.Add(-time.Hour),
+				}
+			},
+			want: cells{201, 201, 201, 201, 201, 401},
+		},
+		{
+			// Every identity edits an entry of its own; editing someone else's is
+			// covered by the endpoint's own test.
+			name: "entry update", method: http.MethodPatch,
+			path: func(t *testing.T, f *fixture, u *store.User) string {
+				return entryPath(f.ownEntry(t, u).ID)
+			},
+			body: func(*fixture) any { return map[string]any{"note": "matrix"} },
+			want: cells{200, 200, 200, 200, 200, 401},
+		},
+		{
+			name: "entry delete", method: http.MethodDelete,
+			path: func(t *testing.T, f *fixture, u *store.User) string {
+				return entryPath(f.ownEntry(t, u).ID)
+			},
+			want: cells{204, 204, 204, 204, 204, 401},
+		},
+		{
+			name: "entry restore", method: http.MethodPost,
+			path: func(t *testing.T, f *fixture, u *store.User) string {
+				return entryPath(f.ownEntry(t, u).ID) + "/restore"
+			},
+			want: cells{403, 403, 403, 403, 200, 401},
+		},
+		{
+			name: "timer get", method: http.MethodGet,
+			path: func(*testing.T, *fixture, *store.User) string { return apiPrefix + "/timer" },
+			want: cells{200, 200, 200, 200, 200, 401},
+		},
+		{
+			name: "timer start", method: http.MethodPost,
+			path: func(*testing.T, *fixture, *store.User) string { return apiPrefix + "/timer/start" },
+			body: func(f *fixture) any { return map[string]any{"project_id": f.ProjectA.ID} },
+			want: cells{201, 201, 201, 201, 201, 401},
+		},
+		{
+			name: "timer stop", method: http.MethodPost,
+			path: func(t *testing.T, f *fixture, u *store.User) string {
+				f.ownRunning(t, u)
+				return apiPrefix + "/timer/stop"
+			},
+			want: cells{200, 200, 200, 200, 200, 401},
+		},
+		{
+			name: "reports", method: http.MethodGet,
+			path: func(*testing.T, *fixture, *store.User) string { return apiPrefix + "/reports?by=none" },
+			want: cells{200, 200, 200, 200, 200, 401},
+		},
+		{
+			name: "reports csv", method: http.MethodGet,
+			path: func(*testing.T, *fixture, *store.User) string { return apiPrefix + "/reports.csv?by=none" },
+			want: cells{200, 200, 200, 200, 200, 401},
+		},
 	}
 
 	for _, tc := range cases {
@@ -223,7 +294,7 @@ func checkStatus(t *testing.T, identity, endpoint string, rec *httptest.Response
 	}
 }
 
-// TestOpenAPIListsStage2Routes is the spec's guard against a forgotten Huma
+// TestOpenAPIListsSpecRoutes is the spec's guard against a forgotten Huma
 // registration: the document must list every route the HTTP API table names.
 func TestOpenAPIListsStage2Routes(t *testing.T) {
 	rec := get(t, apiPrefix+"/openapi.json")
@@ -258,6 +329,16 @@ func TestOpenAPIListsStage2Routes(t *testing.T) {
 		{http.MethodPost, apiPrefix + "/projects"},
 		{http.MethodPatch, apiPrefix + "/projects/{id}"},
 		{http.MethodPost, apiPrefix + "/projects/{id}/restore"},
+		{http.MethodGet, apiPrefix + "/entries"},
+		{http.MethodPost, apiPrefix + "/entries"},
+		{http.MethodPatch, apiPrefix + "/entries/{id}"},
+		{http.MethodDelete, apiPrefix + "/entries/{id}"},
+		{http.MethodPost, apiPrefix + "/entries/{id}/restore"},
+		{http.MethodGet, apiPrefix + "/timer"},
+		{http.MethodPost, apiPrefix + "/timer/start"},
+		{http.MethodPost, apiPrefix + "/timer/stop"},
+		{http.MethodGet, apiPrefix + "/reports"},
+		{http.MethodGet, apiPrefix + "/reports.csv"},
 	}
 	for _, r := range routes {
 		if _, ok := doc.Paths[r.path][strings.ToLower(r.method)]; !ok {

@@ -59,8 +59,11 @@ func New(st *store.Store, clk clock.Clock) http.Handler {
 
 	s := &Server{Store: st, Clock: clk}
 	s.authRoutes(api)
+	s.entryRoutes(api)
 	s.projectRoutes(api)
+	s.reportRoutes(api)
 	s.teamRoutes(api)
+	s.timerRoutes(api)
 	s.tokenRoutes(api)
 	s.userRoutes(api)
 	return s.withRequest(mux)
