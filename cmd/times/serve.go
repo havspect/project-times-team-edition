@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -42,6 +41,9 @@ func serve(args []string, stderr io.Writer) int {
 		Addr:              cfg.Addr,
 		Handler:           api.New(st, clock.System{}),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -54,9 +56,6 @@ func serve(args []string, stderr io.Writer) int {
 
 	select {
 	case err := <-listenErr:
-		if errors.Is(err, http.ErrServerClosed) {
-			return 0
-		}
 		log.Error("listen", "addr", cfg.Addr, "error", err)
 		return 1
 	case <-ctx.Done():

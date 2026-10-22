@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/havspect/project-times/internal/auth"
 	"github.com/havspect/project-times/internal/config"
@@ -16,11 +17,18 @@ func admin(args []string, stdout, stderr io.Writer) int {
 		return adminUsage(stderr)
 	}
 
+	// Same default as serve, so TIMES_DB reaches both commands.
+	cfg, err := config.Load(nil, os.Getenv)
+	if err != nil {
+		fmt.Fprintf(stderr, "times admin create: %v\n", err)
+		return 1
+	}
+
 	fs := flag.NewFlagSet("admin create", flag.ContinueOnError)
 	fs.SetOutput(io.Discard) // the caller reports the error in one line
 	email := fs.String("email", "", "email")
 	name := fs.String("name", "", "name")
-	db := fs.String("db", config.DefaultDB, "sqlite file path")
+	db := fs.String("db", cfg.DB, "sqlite file path")
 	if err := fs.Parse(args[1:]); err != nil {
 		fmt.Fprintf(stderr, "times admin create: %v\n", err)
 		return 2
@@ -42,10 +50,12 @@ func admin(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	if _, err := st.UserByEmail(*email); err == nil {
+	_, err = st.UserByEmail(*email)
+	if err == nil {
 		fmt.Fprintf(stderr, "times admin create: %s already exists\n", *email)
 		return 1
-	} else if !errors.Is(err, store.ErrNotFound) {
+	}
+	if !errors.Is(err, store.ErrNotFound) {
 		fmt.Fprintf(stderr, "times admin create: %v\n", err)
 		return 1
 	}

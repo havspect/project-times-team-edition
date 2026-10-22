@@ -32,7 +32,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "times openapi: %v\n", err)
 			return 1
 		}
-		stdout.Write(spec)
+		if _, err := stdout.Write(spec); err != nil {
+			fmt.Fprintf(stderr, "times openapi: write spec: %v\n", err)
+			return 1
+		}
 		return 0
 	case "admin":
 		return admin(args[1:], stdout, stderr)

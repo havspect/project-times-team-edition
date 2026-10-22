@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -21,20 +22,25 @@ func TestVersion(t *testing.T) {
 }
 
 func TestUsageErrors(t *testing.T) {
-	cases := [][]string{
-		nil,
-		{"unknown"},
-		{"admin"},
-		{"admin", "delete"},
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"none", nil},
+		{"unknown command", []string{"unknown"}},
+		{"admin without subcommand", []string{"admin"}},
+		{"unknown admin subcommand", []string{"admin", "delete"}},
 	}
-	for _, args := range cases {
-		var stdout, stderr bytes.Buffer
-		if code := run(args, &stdout, &stderr); code != 2 {
-			t.Errorf("run(%q) exit %d, want 2", args, code)
-		}
-		if stderr.Len() == 0 {
-			t.Errorf("run(%q) wrote no usage to stderr", args)
-		}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if code := run(tt.args, &stdout, &stderr); code != 2 {
+				t.Errorf("run(%q) exit %d, want 2", tt.args, code)
+			}
+			if stderr.Len() == 0 {
+				t.Errorf("run(%q) wrote no usage to stderr", tt.args)
+			}
+		})
 	}
 }
 
@@ -76,6 +82,29 @@ func TestAdminCreate(t *testing.T) {
 	}
 	if !auth.VerifyPassword(u.PasswordHash, password) {
 		t.Fatalf("printed password does not verify against the stored hash")
+	}
+}
+
+func TestAdminCreateUsesEnvDB(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "env.db")
+	t.Setenv("TIMES_DB", db)
+
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"admin", "create", "--email", "grace@example.com", "--name", "Grace Hopper"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit %d, want 0 (stderr %q)", code, stderr.String())
+	}
+	if _, err := os.Stat(db); err != nil {
+		t.Fatalf("TIMES_DB %s was not written: %v", db, err)
+	}
+
+	st, err := store.Open(db)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	if _, err := st.UserByEmail("grace@example.com"); err != nil {
+		t.Fatalf("admin not in TIMES_DB database: %v", err)
 	}
 }
 
