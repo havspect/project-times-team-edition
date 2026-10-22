@@ -62,6 +62,20 @@ type Project struct {
 	ArchivedAt *time.Time
 }
 
+// Entry is one continuous stretch of work on one project. EndAt is nil while it
+// runs; DeletedAt is set instead of removing the row.
+type Entry struct {
+	ID        uint       `gorm:"primarykey"`
+	UserID    uint       `gorm:"not null;index"`
+	ProjectID uint       `gorm:"not null;index"`
+	StartAt   time.Time  `gorm:"not null;index"`
+	EndAt     *time.Time `gorm:"index"`
+	Note      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt *time.Time `gorm:"index"`
+}
+
 // APIToken is a personal token that acts as its user; only the hash is stored.
 type APIToken struct {
 	ID         uint   `gorm:"primarykey"`

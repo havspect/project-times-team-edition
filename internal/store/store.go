@@ -12,7 +12,7 @@ import (
 )
 
 // SchemaVersion is reported by /healthz so support can tell which model set a database has.
-const SchemaVersion = 2
+const SchemaVersion = 3
 
 // ErrNotFound is returned when a lookup matches no row.
 var ErrNotFound = errors.New("not found")
@@ -67,7 +67,12 @@ func (s *Store) Close() error {
 
 // Migrate creates or updates the tables; running it on every boot is safe.
 func (s *Store) Migrate() error {
-	return s.db.AutoMigrate(&User{}, &Session{}, &Team{}, &TeamMembership{}, &Project{}, &APIToken{})
+	if err := s.db.AutoMigrate(&User{}, &Session{}, &Team{}, &TeamMembership{}, &Project{}, &APIToken{}, &Entry{}); err != nil {
+		return err
+	}
+	// One running entry per user; struct tags cannot express a partial index.
+	return s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_one_running
+		ON entries(user_id) WHERE end_at IS NULL AND deleted_at IS NULL`).Error
 }
 
 // CreateUser inserts u, lowercasing and trimming u.Email in place. A taken email
