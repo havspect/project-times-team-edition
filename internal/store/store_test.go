@@ -96,8 +96,8 @@ func TestDuplicateEmailRejected(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	err := s.CreateUser(&User{Email: "ADA@example.com", Name: "Ada Again", PasswordHash: "y"})
-	if err == nil {
-		t.Fatal("duplicate email accepted")
+	if !errors.Is(err, ErrDuplicateEmail) {
+		t.Fatalf("duplicate email = %v, want ErrDuplicateEmail", err)
 	}
 }
 

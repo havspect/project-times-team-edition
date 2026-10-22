@@ -17,6 +17,9 @@ const SchemaVersion = 2
 // ErrNotFound is returned when a lookup matches no row.
 var ErrNotFound = errors.New("not found")
 
+// ErrDuplicateEmail is returned by CreateUser when the email is already taken.
+var ErrDuplicateEmail = errors.New("duplicate email")
+
 // Store is a handle to the SQLite database.
 type Store struct {
 	db *gorm.DB
@@ -41,7 +44,12 @@ func Open(path string) (*Store, error) {
 	}
 	// The default logger prints every not-found lookup, which every bad login and
 	// stale cookie triggers; a missing row is a normal reply here, not an error.
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	// TranslateError turns driver errors into gorm's sentinels, so a unique-constraint
+	// violation is recognizable without matching the driver's prose.
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
+		Logger:         logger.Default.LogMode(logger.Silent),
+		TranslateError: true,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -62,10 +70,15 @@ func (s *Store) Migrate() error {
 	return s.db.AutoMigrate(&User{}, &Session{}, &Team{}, &TeamMembership{}, &Project{}, &APIToken{})
 }
 
-// CreateUser inserts u, lowercasing and trimming u.Email in place.
+// CreateUser inserts u, lowercasing and trimming u.Email in place. A taken email
+// returns ErrDuplicateEmail.
 func (s *Store) CreateUser(u *User) error {
 	u.Email = normalizeEmail(u.Email)
-	return s.db.Create(u).Error
+	err := s.db.Create(u).Error
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return ErrDuplicateEmail
+	}
+	return err
 }
 
 // UserByID returns the user with id, or ErrNotFound.
