@@ -197,7 +197,7 @@ One build pipeline, in this order: `go run ./cmd/times openapi > web/openapi.jso
 - **store tests** — `AutoMigrate` on an empty temp-dir database, a second boot being a no-op, the partial index actually rejecting a second running entry, archived-project filtering, deleted-entry exclusion, soft delete and restore.
 - **API tests** — `httptest` with the full router; table-driven permission matrix (member / lead of that team / lead of another team / admin) over every endpoint; session and bearer auth incl. expired and revoked; range validation; 409 on double start. One test asserts `/openapi.json` lists every route in the spec table, so a missing Huma registration fails CI.
 - **CLI tests** — subcommands against a fake `client.Interface`; one end-to-end test builds the binary, bootstraps an admin, serves on `:0`, logs in, creates a project and entry, reads a report and a CSV, and performs an MCP initialize + tool call over stdio.
-- **Frontend** — `npm run check` (svelte-check + tsc) runs against freshly generated types, so an API change the UI did not follow fails the build. Vitest covers timeline math (pixels ↔ time, snapping, resize clamps). Browser tests are deferred; the timeline gets a manual checklist in the PR until they exist.
+- **Frontend** — `pnpm run check` (svelte-check + tsc) runs against freshly generated types, so an API change the UI did not follow fails the build. Vitest covers timeline math (pixels ↔ time, snapping, resize clamps). Browser tests are deferred; the timeline gets a manual checklist in the PR until they exist.
 
 Time is injected (`Clock` interface) anywhere "now" matters; tests never sleep.
 

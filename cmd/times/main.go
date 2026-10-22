@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	// Users pick an IANA timezone; the zoneinfo tree is not guaranteed to exist
+	// on the hosts this ships to, so the database is embedded.
+	_ "time/tzdata"
 
 	"github.com/havspect/project-times/internal/api"
 	"github.com/havspect/project-times/internal/version"
