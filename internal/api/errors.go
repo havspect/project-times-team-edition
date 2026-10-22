@@ -15,6 +15,7 @@ const (
 	urnRateLimited            = "urn:times:error:rate-limited"
 	urnForbidden              = "urn:times:error:forbidden"
 	urnNotFound               = "urn:times:error:not-found"
+	urnInvalidInput           = "urn:times:error:invalid-input"
 	urnLastAdmin              = "urn:times:error:last-admin"
 	urnPasswordChangeRequired = "urn:times:error:password-change-required"
 )
