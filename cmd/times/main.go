@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-)
 
-const version = "0.1.0-dev"
+	"github.com/havspect/project-times/internal/api"
+	"github.com/havspect/project-times/internal/version"
+)
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -16,16 +17,31 @@ func main() {
 // run is main without the process, so tests drive subcommands directly.
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: times <command> [flags]")
-		return 2
+		return usage(stderr)
 	}
 
 	switch args[0] {
 	case "version":
-		fmt.Fprintf(stdout, "times %s\n", version)
+		fmt.Fprintf(stdout, "times %s\n", version.Version)
 		return 0
+	case "serve":
+		return serve(args[1:], stderr)
+	case "openapi":
+		spec, err := api.Spec()
+		if err != nil {
+			fmt.Fprintf(stderr, "times openapi: %v\n", err)
+			return 1
+		}
+		stdout.Write(spec)
+		return 0
+	case "admin":
+		return admin(args[1:], stdout, stderr)
 	}
 
-	fmt.Fprintln(stderr, "usage: times <command> [flags]")
+	return usage(stderr)
+}
+
+func usage(stderr io.Writer) int {
+	fmt.Fprintln(stderr, "usage: times <version|serve|openapi|admin>")
 	return 2
 }
