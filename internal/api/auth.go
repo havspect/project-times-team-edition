@@ -23,12 +23,13 @@ type membershipResponse struct {
 }
 
 type meResponse struct {
-	ID          uint                 `json:"id"`
-	Email       string               `json:"email"`
-	Name        string               `json:"name"`
-	Timezone    string               `json:"timezone"`
-	IsAdmin     bool                 `json:"is_admin"`
-	Memberships []membershipResponse `json:"memberships"`
+	ID                 uint                 `json:"id"`
+	Email              string               `json:"email"`
+	Name               string               `json:"name"`
+	Timezone           string               `json:"timezone"`
+	IsAdmin            bool                 `json:"is_admin"`
+	MustChangePassword bool                 `json:"must_change_password"`
+	Memberships        []membershipResponse `json:"memberships"`
 }
 
 func (s *Server) authRoutes(api huma.API) {
@@ -144,7 +145,8 @@ func (s *Server) me(ctx context.Context, _ *struct{}) (*meOutput, error) {
 func (s *Server) meOf(u *store.User) (meResponse, error) {
 	out := meResponse{
 		ID: u.ID, Email: u.Email, Name: u.Name, Timezone: u.Timezone, IsAdmin: u.IsAdmin,
-		Memberships: []membershipResponse{},
+		MustChangePassword: u.MustChangePassword,
+		Memberships:        []membershipResponse{},
 	}
 	ms, err := s.Store.MembershipsOf(u.ID)
 	if err != nil {

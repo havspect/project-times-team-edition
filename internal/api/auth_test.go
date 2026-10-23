@@ -132,6 +132,9 @@ func TestLogin(t *testing.T) {
 	if me.Email != h.user.Email || me.Name != h.user.Name || !me.IsAdmin {
 		t.Fatalf("body = %+v, want the user", me)
 	}
+	if me.MustChangePassword {
+		t.Fatal("must_change_password = true for a user who set their own password")
+	}
 
 	c := sessionOf(t, rec)
 	if c.Value == "" || !c.HttpOnly || c.SameSite != http.SameSiteLaxMode || c.Path != "/" {
@@ -323,6 +326,31 @@ func TestLoginRateLimit(t *testing.T) {
 	h.clock.now = h.clock.now.Add(loginWindow)
 	if rec := h.loginFrom(ip, h.user.Email, h.password); rec.Code != http.StatusOK {
 		t.Fatalf("status after the window = %d, want 200: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestMeReportsMustChangePassword(t *testing.T) {
+	h := newHarness(t)
+	const password = "initial password"
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	u := &store.User{
+		Email: "new@example.com", Name: "New Person", PasswordHash: hash,
+		Timezone: "UTC", Active: true, MustChangePassword: true,
+	}
+	if err := h.st.CreateUser(u); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	// The SPA routes on this field, so login and /me must both carry it.
+	if me := decode[meResponse](t, h.login(u.Email, password)); !me.MustChangePassword {
+		t.Fatal("login must_change_password = false, want true")
+	}
+	c := sessionOf(t, h.login(u.Email, password))
+	if me := decode[meResponse](t, h.do(http.MethodGet, "/api/v1/me", nil, nil, c.Value)); !me.MustChangePassword {
+		t.Fatal("/me must_change_password = false, want true")
 	}
 }
 

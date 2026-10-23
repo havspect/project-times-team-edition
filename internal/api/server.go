@@ -15,6 +15,7 @@ import (
 	"github.com/havspect/project-times/internal/entry"
 	"github.com/havspect/project-times/internal/store"
 	"github.com/havspect/project-times/internal/version"
+	"github.com/havspect/project-times/web"
 )
 
 const (
@@ -33,7 +34,7 @@ type Server struct {
 
 // New returns the http.Handler for the whole API and web surface.
 func New(st *store.Store, clk clock.Clock) http.Handler {
-	mux := http.NewServeMux()
+	apiMux := http.NewServeMux()
 
 	cfg := huma.DefaultConfig("Project Times", version.Version)
 	cfg.OpenAPIPath = openAPIPath
@@ -41,7 +42,7 @@ func New(st *store.Store, clk clock.Clock) http.Handler {
 	cfg.SchemasPath = ""
 	// The default hook injects $schema and a Link header into every response body.
 	cfg.CreateHooks = nil
-	api := humago.New(mux, cfg)
+	api := humago.New(apiMux, cfg)
 
 	// The document advertises both ways to authenticate; withRequest enforces them.
 	doc := api.OpenAPI()
@@ -57,8 +58,6 @@ func New(st *store.Store, clk clock.Clock) http.Handler {
 	}
 	doc.Security = []map[string][]string{{"bearerAuth": {}}, {"sessionCookie": {}}}
 
-	mux.HandleFunc("GET /healthz", health)
-
 	s := &Server{Store: st, Clock: clk, entries: entry.New(st, clk)}
 	s.authRoutes(api)
 	s.entryRoutes(api)
@@ -68,7 +67,20 @@ func New(st *store.Store, clk clock.Clock) http.Handler {
 	s.timerRoutes(api)
 	s.tokenRoutes(api)
 	s.userRoutes(api)
-	return s.withRequest(mux)
+
+	// An unknown path under /api/ is still an API client: answer in the same
+	// problem+json shape rather than net/http's plain-text 404.
+	apiMux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		writeProblem(w, problem(http.StatusNotFound, urnNotFound, "not found"))
+	})
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", health)
+	// Only the API subtree needs a session: the SPA shell must load so a user
+	// with must_change_password can reach the password screen.
+	mux.Handle("/api/", s.withRequest(apiMux))
+	mux.Handle("/", web.Handler())
+	return mux
 }
 
 // Spec returns the generated OpenAPI document, for `times openapi`.

@@ -3,4 +3,6 @@
 *.db-wal
 *.db-shm
 web/dist/
-web/src/lib/api/
+web/node_modules/
+web/openapi.json
+web/src/lib/api/schema.d.ts

@@ -23,6 +23,8 @@ type Scope struct {
 	UserID uint
 	// ProjectIDs includes entries on these projects.
 	ProjectIDs []uint
+	// IncludeDeleted also returns soft-deleted entries (admin listings).
+	IncludeDeleted bool
 }
 
 // CreateEntry inserts e. A second running entry for the same user returns
@@ -115,10 +117,14 @@ func (s *Store) StopRunning(userID uint, at time.Time, note string) error {
 }
 
 // EntriesInRange returns live entries overlapping [from, to), oldest first.
-// A running entry overlaps every range that starts after its start.
+// A scope with IncludeDeleted also returns soft-deleted entries. A running
+// entry overlaps every range that starts after its start.
 func (s *Store) EntriesInRange(from, to time.Time, scope Scope) ([]Entry, error) {
 	out := []Entry{}
-	q := s.db.Where("deleted_at IS NULL AND start_at < ? AND (end_at IS NULL OR end_at > ?)", to, from)
+	q := s.db.Where("start_at < ? AND (end_at IS NULL OR end_at > ?)", to, from)
+	if !scope.IncludeDeleted {
+		q = q.Where("deleted_at IS NULL")
+	}
 	q = scope.apply(q)
 	err := q.Order("start_at").Find(&out).Error
 	return out, err

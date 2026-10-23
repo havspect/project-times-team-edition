@@ -1,0 +1,15 @@
+<script lang="ts">
+  import type { Snippet } from 'svelte'
+  import { router } from './router.svelte'
+
+  let { href, class: className = '', children }: { href: string; class?: string; children?: Snippet } = $props()
+
+  function follow(event: MouseEvent) {
+    // Leave modified clicks to the browser so open-in-new-tab still works.
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    router.navigate(href)
+  }
+</script>
+
+<a {href} class={className} onclick={follow}>{@render children?.()}</a>

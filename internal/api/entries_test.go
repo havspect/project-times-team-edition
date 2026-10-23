@@ -197,6 +197,42 @@ func TestEntryDeleteAndRestore(t *testing.T) {
 	}
 }
 
+func TestEntryListIncludeDeleted(t *testing.T) {
+	f := seed(t)
+	live := f.entry(t, f.Member, f.ProjectA, f.clock.now.Add(-3*time.Hour), f.clock.now.Add(-2*time.Hour), "live")
+	gone := f.entry(t, f.Member, f.ProjectA, f.clock.now.Add(-2*time.Hour), f.clock.now.Add(-time.Hour), "gone")
+	if err := f.st.SoftDeleteEntry(gone.ID, f.clock.now); err != nil {
+		t.Fatalf("delete entry: %v", err)
+	}
+
+	// The default list never shows deleted rows, for admins too.
+	for _, u := range []*store.User{f.Member, f.Admin} {
+		got := decode[[]entryResponse](t, sendAs(t, f, u, http.MethodGet, apiPrefix+"/entries", nil))
+		if len(got) != 1 || got[0].ID != live.ID {
+			t.Fatalf("default list for %s = %+v, want only the live entry", u.Email, got)
+		}
+	}
+
+	// Only an admin may widen the list to deleted rows.
+	wantProblem(t, sendAs(t, f, f.Member, http.MethodGet, apiPrefix+"/entries?include_deleted=true", nil),
+		http.StatusForbidden, urnForbidden)
+
+	got := decode[[]entryResponse](t, sendAs(t, f, f.Admin, http.MethodGet, apiPrefix+"/entries?include_deleted=true", nil))
+	if len(got) != 2 {
+		t.Fatalf("admin list = %+v, want the live and deleted entries", got)
+	}
+	byID := map[uint]entryResponse{}
+	for _, e := range got {
+		byID[e.ID] = e
+	}
+	if byID[live.ID].DeletedAt != nil {
+		t.Fatalf("live entry marked deleted: %+v", byID[live.ID])
+	}
+	if byID[gone.ID].DeletedAt == nil {
+		t.Fatalf("deleted entry has no deleted_at: %+v", byID[gone.ID])
+	}
+}
+
 func TestProjectWithEntriesKeepsItsTeam(t *testing.T) {
 	f := seed(t)
 	f.entry(t, f.Member, f.ProjectA, f.clock.now.Add(-2*time.Hour), f.clock.now.Add(-time.Hour), "booked")

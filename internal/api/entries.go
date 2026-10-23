@@ -38,7 +38,7 @@ func (s *Server) entryRoutes(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        apiPrefix + "/entries",
 		Tags:        []string{"entries"},
-		Errors:      []int{http.StatusUnauthorized, http.StatusUnprocessableEntity, http.StatusInternalServerError},
+		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusUnprocessableEntity, http.StatusInternalServerError},
 	}, s.listEntries)
 
 	huma.Register(api, huma.Operation{
@@ -77,10 +77,11 @@ func (s *Server) entryRoutes(api huma.API) {
 }
 
 type entryListInput struct {
-	From      string `query:"from" doc:"Inclusive start date, YYYY-MM-DD. Defaults to the start of the caller's ISO week."`
-	To        string `query:"to" doc:"Exclusive end date, YYYY-MM-DD. Required with from."`
-	UserID    uint   `query:"user_id" doc:"Only this user's entries, within what the caller may read."`
-	ProjectID uint   `query:"project_id" doc:"Only this project's entries."`
+	From           string `query:"from" doc:"Inclusive start date, YYYY-MM-DD. Defaults to the start of the caller's ISO week."`
+	To             string `query:"to" doc:"Exclusive end date, YYYY-MM-DD. Required with from."`
+	UserID         uint   `query:"user_id" doc:"Only this user's entries, within what the caller may read."`
+	ProjectID      uint   `query:"project_id" doc:"Only this project's entries."`
+	IncludeDeleted bool   `query:"include_deleted" doc:"Include soft-deleted entries, marked with deleted_at. Admin only; anyone else gets 403."`
 }
 
 type entryListOutput struct{ Body []entryResponse }
@@ -90,10 +91,16 @@ func (s *Server) listEntries(ctx context.Context, in *entryListInput) (*entryLis
 	if err != nil {
 		return nil, err
 	}
+	if in.IncludeDeleted {
+		if _, err := requireAdmin(ctx); err != nil {
+			return nil, err
+		}
+	}
 	scope, err := s.entryScope(u)
 	if err != nil {
 		return nil, internal(err)
 	}
+	scope.IncludeDeleted = in.IncludeDeleted
 	rng, err := parseRange(u.Timezone, s.Clock.Now(), in.From, in.To)
 	if err != nil {
 		return nil, err
