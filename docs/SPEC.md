@@ -14,7 +14,7 @@ In v1:
 - Reports per person / project / day or week, plus CSV.
 - A REST API, a CLI, and an MCP server (stdio), all over the same HTTP API.
 
-Out of v1, deliberately: approvals, leave and holidays, invoicing and rates, reminders and notifications, mobile app, screenshots, Jira/Linear sync, realtime multi-user editing, project budgets, a team-wide timeline, SSO, audit log, i18n.
+Out of v1, deliberately: approvals, leave and holidays, invoicing and rates, reminders and notifications, mobile app, screenshots, Jira/Linear sync, realtime multi-user editing, project budgets, a team-wide timeline, SSO, audit log, i18n, drafting entries from coding-agent session history.
 
 ## Roles
 

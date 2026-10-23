@@ -1,8 +1,42 @@
 # Tstamps
 
-Team time tracking for one workspace: a server binary holding the SQLite
-database, the web timeline and the REST API, and a CLI that every user installs
-on their own machine and points at that server. The CLI also speaks MCP.
+**Team time tracking for one company: log time by dragging on a timeline;
+whoever needs the numbers reads a report.** One server binary holding the
+SQLite database, the web timeline and the REST API, plus a CLI that every user
+installs on their own machine and points at that server. No per-seat
+subscription.
+
+## Why Tstamps
+
+- **Logging is a timeline, not a timesheet.** Drag on an infinite canvas to
+  create an entry, drag its edges to retime it, press `space` to start and stop
+  a running entry. A week of hours is a few drags, not a Friday form.
+- **Your hours land in the day they happened.** Every entry records the
+  timezone it was logged in, so a day worked from Sydney counts as Sydney's
+  Monday and a lead in Berlin reads the same number
+  ([ADR-0007](docs/adr/0007-entry-timezones-decide-buckets.md)).
+- **Leads read the hours without asking for a form.** Anyone may log on any
+  project, and a lead reads every hour booked on their team's projects, by
+  person, by day, week or month, with CSV
+  ([ADR-0002](docs/adr/0002-teams-own-projects.md)).
+- **Log from where you work.** `tstamps start` is one line in a terminal, and
+  `tstamps mcp` lets an agent start, stop and correct entries with the
+  permissions of the token you gave it — no browser tab.
+- **Nothing disappears by accident.** Deleting an entry hides it, archiving a
+  project keeps its hours, a leaver is deactivated with their history intact;
+  an admin restores any of it without a backup
+  ([ADR-0004](docs/adr/0004-archive-projects-delete-entries.md)).
+- **Yours to run.** One `tstamps-server` process on one VM with the UI
+  embedded, behind Caddy on the same host, and a backup that is a file copy
+  ([ADR-0009](docs/adr/0009-deploy-on-one-vm.md)).
+
+## Not for you if
+
+- you need approvals, leave and holidays, invoicing or rates;
+- you want a hosted service, SSO, an audit log or a mobile app;
+- you must erase one person's data — a leaver is deactivated, and erasing a
+  person means erasing the workspace;
+- you need several companies on one install, or realtime co-editing.
 
 What it does and does not do is [docs/SPEC.md](docs/SPEC.md). The vocabulary is
 [GLOSSARY.md](GLOSSARY.md); decisions worth not reversing are in
@@ -208,3 +242,7 @@ changes; Vite hot-reloads the UI on the same page.
 builds both binaries, serves on a free port, bootstraps an admin, logs an entry,
 exports CSV and calls the MCP server over stdio. The Playwright smoke test drives
 the built UI: login, an entry on the timeline, the report table and the CSV.
+
+## License
+
+AGPL-3.0-only; see [LICENSE](LICENSE).
