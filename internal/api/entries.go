@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
@@ -75,33 +74,6 @@ func (s *Server) entryRoutes(api huma.API) {
 		Tags:        []string{"entries"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusInternalServerError},
 	}, s.restoreEntry)
-}
-
-// requireLoggableProject checks the project a new or moved entry points at:
-// unknown is a 422, and an archived project takes no new entries.
-func (s *Server) requireLoggableProject(id uint) error {
-	p, err := s.Store.ProjectByID(id)
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "unknown project")
-	case err != nil:
-		return internal(err)
-	case p.ArchivedAt != nil:
-		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "project is archived")
-	}
-	return nil
-}
-
-// entryRuleProblem turns an entry-rule error into the reply the spec names.
-func entryRuleProblem(err error) *huma.ErrorModel {
-	switch {
-	case errors.Is(err, entry.ErrTooLong):
-		return problem(http.StatusUnprocessableEntity, urnEntryTooLong, "an entry may not be longer than 24 hours")
-	case errors.Is(err, entry.ErrFuture):
-		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "an entry may not be more than 5 minutes in the future")
-	default:
-		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "end must be after start")
-	}
 }
 
 type entryListInput struct {

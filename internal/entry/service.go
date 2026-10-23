@@ -23,6 +23,12 @@ var (
 	ErrRetimeRunning = errors.New("a running entry needs an end_at to be retimed")
 )
 
+// AlreadyRunning is returned by Start when the user already has a running
+// entry; it carries that entry so the reply can name it.
+type AlreadyRunning struct{ Entry *store.Entry }
+
+func (e *AlreadyRunning) Error() string { return "user already has a running entry" }
+
 // Store is the persistence the service needs. *store.Store is the production
 // adapter; tests use a map.
 type Store interface {
@@ -31,6 +37,8 @@ type Store interface {
 	UpdateEntry(id uint, at time.Time, changes map[string]any) error
 	SoftDeleteEntry(id uint, at time.Time) error
 	RestoreEntry(id uint, at time.Time) error
+	RunningEntry(userID uint) (*store.Entry, error)
+	StopRunning(userID uint, at time.Time, note string) error
 	ProjectByID(id uint) (*store.Project, error)
 }
 
@@ -140,6 +148,69 @@ func (s *Service) Restore(id uint) (*store.Entry, error) {
 		return nil, err
 	}
 	return s.store.EntryByID(id)
+}
+
+// Start begins a running entry for userID on projectID.
+func (s *Service) Start(userID, projectID uint, note string) (*store.Entry, error) {
+	if err := s.loggable(projectID); err != nil {
+		return nil, err
+	}
+	running, err := s.Running(userID)
+	if err != nil {
+		return nil, err
+	}
+	if running != nil {
+		return nil, &AlreadyRunning{Entry: running}
+	}
+	now := s.clock.Now()
+	e := &store.Entry{
+		UserID: userID, ProjectID: projectID,
+		StartAt: now, Note: note, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := s.store.CreateEntry(e); err != nil {
+		if !errors.Is(err, store.ErrEntryRunning) {
+			return nil, err
+		}
+		// The index caught a start that raced this one; report it the same way.
+		if running, rErr := s.Running(userID); rErr == nil && running != nil {
+			return nil, &AlreadyRunning{Entry: running}
+		}
+		return nil, err
+	}
+	return e, nil
+}
+
+// Stop ends the user's running entry at now; a missing one is store.ErrNotFound.
+// A stop that would exceed 24 hours returns ErrTooLong and leaves it running.
+func (s *Service) Stop(userID uint, note string) (*store.Entry, error) {
+	running, err := s.store.RunningEntry(userID)
+	if err != nil {
+		return nil, err
+	}
+	now := s.clock.Now()
+	if err := Validate(running.StartAt, now, now); err != nil {
+		return nil, err
+	}
+	if err := s.store.StopRunning(userID, now, note); err != nil {
+		return nil, err
+	}
+	running.EndAt = &now
+	if note != "" {
+		running.Note = note
+	}
+	return running, nil
+}
+
+// Running returns the user's running entry, or nil when none runs.
+func (s *Service) Running(userID uint) (*store.Entry, error) {
+	running, err := s.store.RunningEntry(userID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return running, nil
 }
 
 // own loads a live entry the user may change; a deleted one is not found.

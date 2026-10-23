@@ -31,11 +31,43 @@ func (f *fakeStore) EntryByID(id uint) (*store.Entry, error) {
 }
 
 func (f *fakeStore) CreateEntry(e *store.Entry) error {
+	if e.EndAt == nil {
+		for _, other := range f.entries {
+			if other.UserID == e.UserID && other.EndAt == nil && other.DeletedAt == nil {
+				return store.ErrEntryRunning
+			}
+		}
+	}
 	e.ID = f.nextID
 	f.nextID++
 	cp := *e
 	f.entries[e.ID] = &cp
 	return nil
+}
+
+func (f *fakeStore) RunningEntry(userID uint) (*store.Entry, error) {
+	for _, e := range f.entries {
+		if e.UserID == userID && e.EndAt == nil && e.DeletedAt == nil {
+			cp := *e
+			return &cp, nil
+		}
+	}
+	return nil, store.ErrNotFound
+}
+
+func (f *fakeStore) StopRunning(userID uint, at time.Time, note string) error {
+	for _, e := range f.entries {
+		if e.UserID == userID && e.EndAt == nil && e.DeletedAt == nil {
+			end := at
+			e.EndAt = &end
+			if note != "" {
+				e.Note = note
+			}
+			e.UpdatedAt = at
+			return nil
+		}
+	}
+	return store.ErrNotFound
 }
 
 func (f *fakeStore) UpdateEntry(id uint, _ time.Time, changes map[string]any) error {
@@ -222,5 +254,71 @@ func TestDeleteAndRestore(t *testing.T) {
 	}
 	if _, err := svc.Restore(99); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Restore = %v, want store.ErrNotFound", err)
+	}
+}
+
+func TestStart(t *testing.T) {
+	svc, st := newService()
+	archived := now
+	st.projects[2] = store.Project{ID: 2, ArchivedAt: &archived}
+
+	if _, err := svc.Start(1, 2, ""); !errors.Is(err, ErrArchivedProject) {
+		t.Errorf("Start on an archived project = %v, want ErrArchivedProject", err)
+	}
+
+	e, err := svc.Start(1, 1, "fresh")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if e.ID == 0 || !e.StartAt.Equal(now) {
+		t.Errorf("started entry = %+v, want an id and StartAt = now", e)
+	}
+
+	running, err := svc.Running(1)
+	if err != nil || running == nil || running.ID != e.ID {
+		t.Fatalf("Running = %+v, %v, want entry %d", running, err, e.ID)
+	}
+
+	var already *AlreadyRunning
+	if _, err := svc.Start(1, 1, ""); !errors.As(err, &already) {
+		t.Errorf("second Start = %v, want AlreadyRunning", err)
+	} else if already.Entry.ID != e.ID {
+		t.Errorf("AlreadyRunning names entry %d, want %d", already.Entry.ID, e.ID)
+	}
+
+	if running, err := svc.Running(2); err != nil || running != nil {
+		t.Errorf("Running for a user with no timer = %+v, %v, want nil", running, err)
+	}
+}
+
+func TestStop(t *testing.T) {
+	svc, st := newService()
+	st.seed(t, store.Entry{UserID: 1, ProjectID: 1, StartAt: now.Add(-2 * time.Hour), Note: "old"})
+
+	e, err := svc.Stop(1, "done")
+	if err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if e.EndAt == nil || !e.EndAt.Equal(now) {
+		t.Errorf("EndAt = %v, want now", e.EndAt)
+	}
+	if e.Note != "done" {
+		t.Errorf("Note = %q, want the stop note", e.Note)
+	}
+
+	if _, err := svc.Stop(1, ""); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("second Stop = %v, want store.ErrNotFound", err)
+	}
+}
+
+func TestStopLeavesAnEntryOver24HoursRunning(t *testing.T) {
+	svc, st := newService()
+	st.seed(t, store.Entry{UserID: 1, ProjectID: 1, StartAt: now.Add(-25 * time.Hour)})
+
+	if _, err := svc.Stop(1, ""); !errors.Is(err, ErrTooLong) {
+		t.Errorf("Stop = %v, want ErrTooLong", err)
+	}
+	if running, err := svc.Running(1); err != nil || running == nil {
+		t.Error("stopping a too-long entry must leave it running")
 	}
 }

@@ -29,8 +29,3 @@ func Validate(start, end, now time.Time) error {
 	}
 	return nil
 }
-
-// ValidateStop checks stopping a running entry that started at start at instant at.
-func ValidateStop(start, at, now time.Time) error {
-	return Validate(start, at, now)
-}
