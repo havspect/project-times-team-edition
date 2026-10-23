@@ -56,6 +56,10 @@ _Avoid_: timer, active entry, open record
 To record an entry against a project.
 _Avoid_: book, track, record (as a verb)
 
+**Timeline**:
+The personal, horizontally scrollable view of one user's entries over time, where logging happens.
+_Avoid_: canvas, calendar, chart, board
+
 **Note**:
 Free text on an entry describing what was done.
 _Avoid_: description, comment, remark

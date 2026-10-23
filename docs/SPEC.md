@@ -183,12 +183,12 @@ internal/client/    typed HTTP client shared by CLI and MCP
 internal/cli/       subcommands
 internal/mcp/       MCP tool definitions
 web/                Svelte 5 + Vite source; web/dist is embedded
-web/src/lib/api/    generated schema + typed fetch client (gitignored)
+web/src/lib/api/    generated OpenAPI types (gitignored); the typed fetch wrapper sits beside them
 ```
 
 Go stdlib `net/http` behind Huma's adapter. `log/slog` for logs. No DI framework: `main` wires a `store`, an `auth`, and an `api.Server` explicitly. The GORM models are the schema: `AutoMigrate` runs at boot, followed by one raw `CREATE UNIQUE INDEX ... WHERE end_at IS NULL` for the single running entry, which tags cannot express ([ADR-0005](./adr/0005-gorm-pure-go-sqlite.md)).
 
-One build pipeline, in this order: `go run ./cmd/times openapi > web/openapi.json`, `openapi-typescript` into `web/src/lib/api/schema.d.ts`, `vite build` into `web/dist`, `go build` embeds it. `make dev` and `make build` run exactly that; no generated types are committed.
+One build pipeline, in this order: `go run ./cmd/times openapi > web/openapi.json`, `openapi-typescript` into `web/src/lib/api/schema.d.ts`, `vite build` into `web/dist`, `go build` embeds it. `just dev` runs the API and Vite together from a Procfile; `just build` runs the pipeline. No generated types are committed.
 
 ## Testing
 
