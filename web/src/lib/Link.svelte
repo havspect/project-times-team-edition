@@ -2,7 +2,12 @@
   import type { Snippet } from 'svelte'
   import { router } from './router.svelte'
 
-  let { href, class: className = '', children }: { href: string; class?: string; children?: Snippet } = $props()
+  let {
+    href,
+    class: className = '',
+    current = false,
+    children,
+  }: { href: string; class?: string; current?: boolean; children?: Snippet } = $props()
 
   function follow(event: MouseEvent) {
     // Leave modified clicks to the browser so open-in-new-tab still works.
@@ -12,4 +17,6 @@
   }
 </script>
 
-<a {href} class={className} onclick={follow}>{@render children?.()}</a>
+<a {href} class={className} aria-current={current ? 'page' : undefined} onclick={follow}>
+  {@render children?.()}
+</a>

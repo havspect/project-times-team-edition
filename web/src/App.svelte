@@ -49,6 +49,10 @@
       if (path !== '/login') router.navigate('/login', { replace: true })
     } else if (session.mustChangePassword) {
       if (path !== '/password') router.navigate('/password', { replace: true })
+    } else if (path.startsWith('/admin') && !user.is_admin) {
+      router.navigate('/timeline', { replace: true })
+    } else if (path === '/reports' && !user.is_admin && !leads) {
+      router.navigate('/timeline', { replace: true })
     } else if (path === '/login' || path === '/password') {
       router.navigate('/timeline', { replace: true })
     }
