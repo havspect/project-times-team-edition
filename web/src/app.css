@@ -377,3 +377,226 @@ input.color {
 input[type='checkbox'] {
   width: auto;
 }
+
+/* Timeline: a horizontal strip of day columns, entry blocks and an edit aside. */
+
+main.wide {
+  max-width: 90rem;
+}
+
+.timeline-nav {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.timeline-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-3);
+}
+
+@media (min-width: 60rem) {
+  .timeline-layout.with-panel {
+    grid-template-columns: minmax(0, 1fr) 20rem;
+  }
+}
+
+.timeline-scroll {
+  position: relative;
+  overflow: auto;
+  min-height: 18rem;
+  max-height: 70vh;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: crosshair;
+}
+
+.strip {
+  position: relative;
+}
+
+.strip-header {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  height: 2.75rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.day-head {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.day-head.today {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.day-head .daynum {
+  color: var(--text);
+  font-size: 0.9375rem;
+}
+
+.day-head .month {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.6875rem;
+}
+
+.strip-body {
+  position: relative;
+}
+
+.day-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--border);
+}
+
+.day-band.today {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.hour-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--border);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.hour-line span {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  color: var(--muted);
+  font-size: 0.6875rem;
+}
+
+.entry-block {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  height: 1.375rem;
+  padding: 0 var(--space-2);
+  border-radius: 3px;
+  color: #fff;
+  font-size: 0.75rem;
+  line-height: 1.375rem;
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+}
+
+.entry-block.running {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 70%);
+}
+
+.entry-block .block-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entry-block .resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.entry-block .resize.left {
+  left: 0;
+}
+
+.entry-block .resize.right {
+  right: 0;
+}
+
+.entry-block.selected {
+  z-index: 2;
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+
+.entry-block:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.draft {
+  position: absolute;
+  height: 1.375rem;
+  border: 1px dashed var(--accent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.now-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 5;
+  border-left: 2px solid var(--danger);
+  pointer-events: none;
+}
+
+.now-line span {
+  position: absolute;
+  top: 0;
+  left: 2px;
+  padding: 0 var(--space-1);
+  border-radius: 0 3px 3px 0;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.6875rem;
+}
+
+.entry-panel {
+  padding: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.entry-panel h2 {
+  margin: 0 0 var(--space-3);
+  font-size: 1rem;
+}
+
+.entry-panel .field {
+  margin-bottom: var(--space-2);
+}
+
+.entry-panel textarea {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+}
+
+.entry-panel .row-actions {
+  margin-top: var(--space-2);
+}

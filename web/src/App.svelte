@@ -83,7 +83,7 @@
   {/if}
 </header>
 
-<main>
+<main class:wide={router.path === '/timeline'}>
   {#if ready}
     <Page />
   {/if}
