@@ -280,6 +280,10 @@ tr:last-child td {
   border-radius: var(--radius);
 }
 
+.toolbar .tabs {
+  margin: 0;
+}
+
 .field {
   display: flex;
   flex-direction: column;
