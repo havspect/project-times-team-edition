@@ -4,8 +4,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/havspect/project-times/internal/clock"
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/clock"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 // This file is the write side of entries: every mutation and the rules it must

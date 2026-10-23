@@ -7,7 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 // teamRoutes registers the team and membership endpoints.

@@ -1,10 +1,10 @@
 {
-  "name": "project-times-web",
+  "name": "tstamps-web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "gen": "go run ../cmd/times openapi > openapi.json && openapi-typescript openapi.json -o src/lib/api/schema.d.ts",
+    "gen": "go run ../cmd/tstamps-server openapi > openapi.json && openapi-typescript openapi.json -o src/lib/api/schema.d.ts",
     "check": "pnpm gen && svelte-check --tsconfig ./tsconfig.json && tsc --noEmit",
     "build": "vite build",
     "dev": "vite",

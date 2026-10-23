@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/havspect/project-times/internal/auth"
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/auth"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 // fixture is the cast every stage-2 test shares: an admin, two leads of

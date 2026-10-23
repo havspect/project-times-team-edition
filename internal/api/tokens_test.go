@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/havspect/project-times/internal/auth"
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/auth"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 // tokenOrigin is required for cookie-authenticated mutations; tokens are one.

@@ -76,7 +76,7 @@
 </script>
 
 <header>
-  <Link href="/timeline" class="brand">Project Times</Link>
+  <Link href="/timeline" class="brand">Tstamps</Link>
   {#if user && !session.mustChangePassword}
     <nav>
       <Link href="/timeline">Timeline</Link>

@@ -11,11 +11,11 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
-	"github.com/havspect/project-times/internal/clock"
-	"github.com/havspect/project-times/internal/entry"
-	"github.com/havspect/project-times/internal/store"
-	"github.com/havspect/project-times/internal/version"
-	"github.com/havspect/project-times/web"
+	"github.com/havspect/tstamps/internal/clock"
+	"github.com/havspect/tstamps/internal/entry"
+	"github.com/havspect/tstamps/internal/store"
+	"github.com/havspect/tstamps/internal/version"
+	"github.com/havspect/tstamps/web"
 )
 
 const (
@@ -36,7 +36,7 @@ type Server struct {
 func New(st *store.Store, clk clock.Clock) http.Handler {
 	apiMux := http.NewServeMux()
 
-	cfg := huma.DefaultConfig("Project Times", version.Version)
+	cfg := huma.DefaultConfig("Tstamps", version.Version)
 	cfg.OpenAPIPath = openAPIPath
 	cfg.DocsPath = apiPrefix + "/docs"
 	cfg.SchemasPath = ""
@@ -83,7 +83,7 @@ func New(st *store.Store, clk clock.Clock) http.Handler {
 	return mux
 }
 
-// Spec returns the generated OpenAPI document, for `times openapi`.
+// Spec returns the generated OpenAPI document, for `tstamps openapi`.
 func Spec() ([]byte, error) {
 	rec := httptest.NewRecorder()
 	New(nil, clock.System{}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, openAPIPath+".json", nil))

@@ -7,25 +7,25 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/havspect/project-times/internal/entry"
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/entry"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 // Stable machine-readable codes; the type URI is the contract, the prose is not.
 const (
-	urnInvalidCredentials     = "urn:times:error:invalid-credentials"
-	urnUnauthorized           = "urn:times:error:unauthorized"
-	urnInvalidOrigin          = "urn:times:error:invalid-origin"
-	urnInternal               = "urn:times:error:internal"
-	urnRateLimited            = "urn:times:error:rate-limited"
-	urnForbidden              = "urn:times:error:forbidden"
-	urnNotFound               = "urn:times:error:not-found"
-	urnInvalidInput           = "urn:times:error:invalid-input"
-	urnLastAdmin              = "urn:times:error:last-admin"
-	urnPasswordChangeRequired = "urn:times:error:password-change-required"
-	urnTimerAlreadyRunning    = "urn:times:error:timer-already-running"
-	urnEntryTooLong           = "urn:times:error:entry-too-long"
-	urnProjectHasEntries      = "urn:times:error:project-has-entries"
+	urnInvalidCredentials     = "urn:tstamps:error:invalid-credentials"
+	urnUnauthorized           = "urn:tstamps:error:unauthorized"
+	urnInvalidOrigin          = "urn:tstamps:error:invalid-origin"
+	urnInternal               = "urn:tstamps:error:internal"
+	urnRateLimited            = "urn:tstamps:error:rate-limited"
+	urnForbidden              = "urn:tstamps:error:forbidden"
+	urnNotFound               = "urn:tstamps:error:not-found"
+	urnInvalidInput           = "urn:tstamps:error:invalid-input"
+	urnLastAdmin              = "urn:tstamps:error:last-admin"
+	urnPasswordChangeRequired = "urn:tstamps:error:password-change-required"
+	urnTimerAlreadyRunning    = "urn:tstamps:error:timer-already-running"
+	urnEntryTooLong           = "urn:tstamps:error:entry-too-long"
+	urnProjectHasEntries      = "urn:tstamps:error:project-has-entries"
 )
 
 func problem(status int, urn, detail string) *huma.ErrorModel {

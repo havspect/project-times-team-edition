@@ -12,7 +12,7 @@ import (
 
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
-	s, err := Open(filepath.Join(t.TempDir(), "times.db"))
+	s, err := Open(filepath.Join(t.TempDir(), "tstamps.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -24,7 +24,7 @@ func openTestStore(t *testing.T) *Store {
 }
 
 func TestMigrateTwiceKeepsData(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "times.db")
+	path := filepath.Join(t.TempDir(), "tstamps.db")
 
 	s, err := Open(path)
 	if err != nil {
@@ -147,7 +147,7 @@ func TestNewDatabaseFileMode(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX file modes")
 	}
-	path := filepath.Join(t.TempDir(), "times.db")
+	path := filepath.Join(t.TempDir(), "tstamps.db")
 	s, err := Open(path)
 	if err != nil {
 		t.Fatalf("open: %v", err)

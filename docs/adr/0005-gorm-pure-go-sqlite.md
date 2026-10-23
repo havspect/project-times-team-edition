@@ -4,4 +4,4 @@ Persistence is GORM over `glebarez/sqlite` (modernc, no cgo), so the binary stil
 
 Why: AutoMigrate keeps the schema in one place and removes a file that every contributor forgets to write. The default cgo SQLite driver would have quietly traded the single-binary install for it.
 
-Consequence: AutoMigrate only adds. Dropping or renaming a column, changing a column type on SQLite, or moving existing data needs manual SQL against the production database; that is the upgrade path. A database also has no recorded schema version, so support starts with `times version` plus the model set. Column additions land with a zero default, so a new field is not done until its model and its store test agree.
+Consequence: AutoMigrate only adds. Dropping or renaming a column, changing a column type on SQLite, or moving existing data needs manual SQL against the production database; that is the upgrade path. A database also has no recorded schema version, so support starts with `tstamps version` plus the model set. Column additions land with a zero default, so a new field is not done until its model and its store test agree.

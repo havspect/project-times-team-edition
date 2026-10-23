@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 // fixedClock keeps the service tests off the wall clock.

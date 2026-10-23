@@ -20,7 +20,7 @@ type Config struct {
 	Token string `json:"token,omitempty"`
 }
 
-// Client talks to one Project Times server. Login keeps its session cookie in the
+// Client talks to one Tstamps server. Login keeps its session cookie in the
 // jar; a Config.Token is sent as a bearer header on every request.
 type Client struct {
 	cfg  Config
@@ -63,7 +63,7 @@ type Token struct {
 }
 
 // Error is a non-2xx reply from the server. Type is the stable
-// urn:times:error:* code from the problem document.
+// urn:tstamps:error:* code from the problem document.
 type Error struct {
 	StatusCode int
 	Type       string

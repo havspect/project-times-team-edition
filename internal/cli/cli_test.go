@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/havspect/project-times/internal/client"
+	"github.com/havspect/tstamps/internal/client"
 )
 
 // fakeClient embeds the interface so a test implements only what its command
@@ -108,7 +108,7 @@ func newTestApp(f Client) (*App, *bytes.Buffer, *bytes.Buffer) {
 		Out: out, Err: errOut, In: strings.NewReader(""),
 		NewClient: func(client.Config) Client { return f },
 		LoadConfig: func(string, string) (client.Config, error) {
-			return client.Config{URL: "http://times.test", Token: "ts_test"}, nil
+			return client.Config{URL: "http://tstamps.test", Token: "ts_test"}, nil
 		},
 		SaveConfig: func(client.Config) error { return nil },
 		Now:        func() time.Time { return testNow },
@@ -196,7 +196,7 @@ func TestStartNamesTheRunningEntry(t *testing.T) {
 	f := &fakeClient{
 		projects: []client.Project{{ID: 1, Name: "Timeline"}},
 		startErr: &client.Error{
-			StatusCode: 409, Type: "urn:times:error:timer-already-running",
+			StatusCode: 409, Type: "urn:tstamps:error:timer-already-running",
 			RunningEntry: &client.Entry{ID: 3, ProjectID: 1,
 				StartAt: time.Date(2026, 10, 20, 8, 0, 0, 0, time.UTC)},
 		},

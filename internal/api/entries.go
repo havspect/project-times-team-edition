@@ -7,8 +7,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/havspect/project-times/internal/entry"
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/entry"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 // entryResponse is an entry as every entry and timer reply shows it. Project and

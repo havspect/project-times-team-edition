@@ -1,4 +1,4 @@
-# Project Times — specification
+# Tstamps — specification
 
 A team time tracker in the spirit of timeTagger, minus the one-person focus: a personal infinite timeline for logging, a plain table for whoever needs the numbers. One Go binary, one SQLite file, one workspace.
 
@@ -87,7 +87,7 @@ date,iso_week,user,email,team,project,timezone,start,end,seconds,note
 Errors are RFC 9457 problem+json. The stable machine-readable code lives in the `type` URI, not in prose:
 
 ```json
-{"type":"urn:times:error:timer-already-running","title":"Conflict","status":409,"detail":"Nadia already has a running entry.","instance":"/api/v1/timer/start"}
+{"type":"urn:tstamps:error:timer-already-running","title":"Conflict","status":409,"detail":"Nadia already has a running entry.","instance":"/api/v1/timer/start"}
 ```
 
 | Method | Path | Purpose |
@@ -129,32 +129,33 @@ Admin edits are not audited in v1. That is an accepted risk, recorded here rathe
 
 ## CLI
 
-Talks to the API, never to the database. Config from `--url` / `--token`, then `TIMES_URL` / `TIMES_TOKEN`, then `~/.config/times/config.json` (mode 0600). The CLI and the MCP server share `internal/client` and the API's Go structs, so neither needs generated code.
+The server and the CLI are two binaries ([ADR-0008](./adr/0008-user-cli-and-server-are-two-binaries.md)). `tstamps-server` runs a workspace and owns the database; `tstamps` is the user CLI, shipped for linux, macOS and Windows, and talks to the API, never to the database. Config from `--url` / `--token`, then `TSTAMPS_URL` / `TSTAMPS_TOKEN`, then `~/.config/tstamps/config.json` (mode 0600). The CLI and the MCP server share `internal/client` and the API's Go structs, so neither needs generated code.
 
 ```
-times serve [--addr :8080] [--db ./times.db]     # runs the server (web UI + API)
-times admin create --email x --name y            # bootstraps the first admin, prints an initial password
-times login --url https://times.example.com      # password prompt, stores a personal token
-times whoami
-times start <project> [--note "..."]             # project matched by name, then id
-times stop [--note "..."]
-times add <project> --from 09:00 --to 11:30 [--date today] [--note "..."]
-times ls [--from 2026-10-19 --to 2026-10-26] [--user me|email] [--json]
-times edit <id> [--project ...] [--from ...] [--to ...] [--timezone ...] [--note ...]
-times rm <id>
-times projects [--all] | times projects add <name> --team <team> | times projects archive <id>
-times teams | times teams members <team>
-times report --from 2026-10-19 --to 2026-10-26 [--by week|day|month] [--json|--csv]
-times tokens create <name> | times tokens ls | times tokens rm <id>
-times mcp                                        # MCP server on stdio
-times version
+tstamps-server serve [--addr :8080] [--db ./tstamps.db]   # runs the server (web UI + API)
+tstamps-server admin create --email x --name y            # bootstraps the first admin, prints an initial password
+tstamps-server openapi                                    # the OpenAPI document, for the web build
+tstamps login --url https://tstamps.example.com      # password prompt, stores a personal token
+tstamps whoami
+tstamps start <project> [--note "..."]             # project matched by name, then id
+tstamps stop [--note "..."]
+tstamps add <project> --from 09:00 --to 11:30 [--date today] [--note "..."]
+tstamps ls [--from 2026-10-19 --to 2026-10-26] [--user me|email] [--json]
+tstamps edit <id> [--project ...] [--from ...] [--to ...] [--timezone ...] [--note ...]
+tstamps rm <id>
+tstamps projects [--all] | tstamps projects add <name> --team <team> | tstamps projects archive <id>
+tstamps teams | tstamps teams members <team>
+tstamps report --from 2026-10-19 --to 2026-10-26 [--by week|day|month] [--json|--csv]
+tstamps tokens create <name> | tstamps tokens ls | tstamps tokens rm <id>
+tstamps mcp                                        # MCP server on stdio
+tstamps version
 ```
 
 Times without a date mean today in the machine's timezone. Durations are accepted as `1h30m`. Exit codes: 0 ok, 1 error, 2 usage.
 
 ## MCP
 
-`times mcp` speaks MCP over stdio and uses the same config and token as the CLI. Tools mirror the API, with read tools annotated read-only:
+`tstamps mcp` speaks MCP over stdio and uses the same config and token as the CLI. Tools mirror the API, with read tools annotated read-only:
 
 `whoami`, `list_projects`, `list_entries`, `start_timer`, `stop_timer`, `add_entry`, `update_entry`, `delete_entry`, `report`, `list_teams`, `list_users` (admin).
 
@@ -173,7 +174,9 @@ Leads do not get a team timeline in v1; the report table answers their question.
 ## Layout and stack
 
 ```
-cmd/times/          main, subcommand dispatch
+cmd/tstamps/          user CLI: main, client subcommands, MCP
+cmd/tstamps-server/   server: main, serve, admin, openapi
+e2e/                the acceptance walk over both binaries
 internal/config/    flags, env, config file
 internal/store/     GORM models, AutoMigrate, queries
 internal/auth/      argon2id passwords, sessions, tokens, rate limit
@@ -189,7 +192,7 @@ web/src/lib/api/    generated OpenAPI types (gitignored); the typed fetch wrappe
 
 Go stdlib `net/http` behind Huma's adapter. `log/slog` for logs. No DI framework: `main` wires a `store`, an `auth`, and an `api.Server` explicitly. The GORM models are the schema: `AutoMigrate` runs at boot, followed by one raw `CREATE UNIQUE INDEX ... WHERE end_at IS NULL` for the single running entry, which tags cannot express ([ADR-0005](./adr/0005-gorm-pure-go-sqlite.md)).
 
-One build pipeline, in this order: `go run ./cmd/times openapi > web/openapi.json`, `openapi-typescript` into `web/src/lib/api/schema.d.ts`, `vite build` into `web/dist`, `go build` embeds it. `just dev` runs the API and Vite together from a Procfile; `just build` runs the pipeline. No generated types are committed.
+One build pipeline, in this order: `go run ./cmd/tstamps-server openapi > web/openapi.json`, `openapi-typescript` into `web/src/lib/api/schema.d.ts`, `vite build` into `web/dist`, `go build` embeds it. `just dev` runs the API and Vite together from a Procfile; `just build` runs the pipeline. No generated types are committed.
 
 ## Testing
 
@@ -205,8 +208,8 @@ Time is injected (`Clock` interface) anywhere "now" matters; tests never sleep.
 
 ## Build order
 
-1. **Walking skeleton** — config, SQLite, AutoMigrate, Huma + `/openapi.json`, `users`, password login, session cookie, `/healthz`, `times serve`, `times admin create`, first tests.
-2. **Structure** — teams, memberships, projects, permission middleware, personal API tokens, `times login`.
+1. **Walking skeleton** — config, SQLite, AutoMigrate, Huma + `/openapi.json`, `users`, password login, session cookie, `/healthz`, `tstamps serve`, `tstamps admin create`, first tests.
+2. **Structure** — teams, memberships, projects, permission middleware, personal API tokens, `tstamps login`.
 3. **Time** — entries, timer, overlap handling, report bucketing, CSV, permission matrix tests.
 4. **Web** — login, timeline, reports, admin screens, typed client generation, embedded build.
 5. **Agents** — CLI completion, MCP tools, end-to-end test, README with install and backup notes.

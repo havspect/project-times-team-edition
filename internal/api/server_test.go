@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/havspect/project-times/internal/auth"
-	"github.com/havspect/project-times/internal/clock"
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/auth"
+	"github.com/havspect/tstamps/internal/clock"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 func handler() http.Handler { return New(nil, clock.System{}) }
@@ -60,8 +60,8 @@ func TestOpenAPI(t *testing.T) {
 	if !strings.HasPrefix(doc.OpenAPI, "3.1") {
 		t.Fatalf("openapi = %q, want 3.1.x", doc.OpenAPI)
 	}
-	if doc.Info.Title != "Project Times" {
-		t.Fatalf("info.title = %q, want Project Times", doc.Info.Title)
+	if doc.Info.Title != "Tstamps" {
+		t.Fatalf("info.title = %q, want Tstamps", doc.Info.Title)
 	}
 }
 

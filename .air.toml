@@ -1,0 +1,14 @@
+# Hot reload for the API; the UI is Vite's job. See `just dev` and `just serve-watch`.
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -o ./tmp/tstamps-server ./cmd/tstamps-server"
+entrypoint = ["./tmp/tstamps-server", "serve"]
+include_ext = ["go"]
+exclude_dir = ["web", "tmp", ".git"]
+delay = 300
+stop_on_error = true
+
+[misc]
+clean_on_exit = true

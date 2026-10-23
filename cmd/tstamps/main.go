@@ -1,4 +1,6 @@
-// Command times is the Project Times server, CLI and MCP entry point.
+// Command tstamps is the user CLI: it talks to a running server over the HTTP
+// API and needs no database. The server and its admin commands are in
+// cmd/tstamps-server.
 package main
 
 import (
@@ -6,12 +8,11 @@ import (
 	"io"
 	"os"
 	// Users pick an IANA timezone; the zoneinfo tree is not guaranteed to exist
-	// on the hosts this ships to, so the database is embedded.
+	// on the machines this ships to, so the database is embedded.
 	_ "time/tzdata"
 
-	"github.com/havspect/project-times/internal/api"
-	"github.com/havspect/project-times/internal/cli"
-	"github.com/havspect/project-times/internal/version"
+	"github.com/havspect/tstamps/internal/cli"
+	"github.com/havspect/tstamps/internal/version"
 )
 
 func main() {
@@ -27,43 +28,27 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	switch args[0] {
 	case "version":
-		fmt.Fprintf(stdout, "times %s\n", version.Version)
+		fmt.Fprintf(stdout, "tstamps %s\n", version.Version)
 		return 0
 	case "help", "-h", "--help":
 		usage(stdout)
 		return 0
-	case "serve":
-		return serve(args[1:], stderr)
-	case "openapi":
-		spec, err := api.Spec()
-		if err != nil {
-			fmt.Fprintf(stderr, "times openapi: %v\n", err)
-			return 1
-		}
-		if _, err := stdout.Write(spec); err != nil {
-			fmt.Fprintf(stderr, "times openapi: write spec: %v\n", err)
-			return 1
-		}
-		return 0
-	case "admin":
-		return admin(args[1:], stdout, stderr)
 	case "mcp":
 		return mcpCommand(args[1:], stderr)
+	case "serve", "admin", "openapi":
+		// A stale unit file or an old README is how someone ends up here.
+		fmt.Fprintf(stderr, "tstamps: %q is part of tstamps-server, not the CLI\n", args[0])
+		return 2
 	}
 
-	// Everything else is a client command against a running server.
 	return cli.New(stdout, stderr).Run(args)
 }
 
-const usageText = `usage: times <command> [flags]
+const usageText = `usage: tstamps <command> [flags]
 
-server:
-  serve                      run the web UI and API (--addr, --db)
-  admin create               bootstrap an admin (--email, --name, --db)
-  openapi                    print the OpenAPI document
-  version                    print the version
+server commands are in tstamps-server (serve, admin, openapi).
 
-client (needs a token from "times login"):
+client (needs a token from "tstamps login"):
   login --url URL            store a personal API token
   whoami                     show the current user
   start <project>            start the running entry (--note)
@@ -80,6 +65,9 @@ client (needs a token from "times login"):
   report                     hours totals (--from, --to, --by, --json, --csv)
   tokens create|ls|rm        manage personal API tokens
   mcp                        MCP server on stdio
+
+  version                    print the version
+  help                       print this list
 
 Exit codes: 0 ok, 1 error, 2 usage.
 `

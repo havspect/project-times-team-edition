@@ -1,4 +1,4 @@
-# Project Times
+# Tstamps
 
 Team time tracking. People log intervals of work against projects, team leads read the hours logged on their projects, admins run the workspace.
 

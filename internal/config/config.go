@@ -14,7 +14,7 @@ type Config struct {
 
 const (
 	DefaultAddr = ":8080"
-	DefaultDB   = "./times.db"
+	DefaultDB   = "./tstamps.db"
 )
 
 // Load resolves flags over env over defaults. getenv is injected so tests need no
@@ -28,11 +28,11 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	}
 
 	cfg := Config{
-		Addr: envOr("TIMES_ADDR", DefaultAddr),
-		DB:   envOr("TIMES_DB", DefaultDB),
+		Addr: envOr("TSTAMPS_ADDR", DefaultAddr),
+		DB:   envOr("TSTAMPS_DB", DefaultDB),
 	}
 
-	fs := flag.NewFlagSet("times", flag.ContinueOnError)
+	fs := flag.NewFlagSet("tstamps", flag.ContinueOnError)
 	fs.SetOutput(io.Discard) // the caller reports the error, so no flag chatter on stderr
 	fs.StringVar(&cfg.Addr, "addr", cfg.Addr, "listen address")
 	fs.StringVar(&cfg.DB, "db", cfg.DB, "sqlite file path")

@@ -7,13 +7,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/havspect/project-times/internal/client"
+	"github.com/havspect/tstamps/internal/client"
 )
 
 // clientConfigRel is the config file under the user's home directory.
-var clientConfigRel = filepath.Join(".config", "times", "config.json")
+var clientConfigRel = filepath.Join(".config", "tstamps", "config.json")
 
-// LoadClient resolves the client settings: flags, then TIMES_URL/TIMES_TOKEN, then
+// LoadClient resolves the client settings: flags, then TSTAMPS_URL/TSTAMPS_TOKEN, then
 // the config file. A missing file is not an error.
 func LoadClient(urlFlag, tokenFlag string, getenv func(string) string) (client.Config, error) {
 	home, err := os.UserHomeDir()
@@ -37,10 +37,10 @@ func loadClient(urlFlag, tokenFlag string, getenv func(string) string, home stri
 	if err != nil {
 		return client.Config{}, err
 	}
-	if v := getenv("TIMES_URL"); v != "" {
+	if v := getenv("TSTAMPS_URL"); v != "" {
 		cfg.URL = v
 	}
-	if v := getenv("TIMES_TOKEN"); v != "" {
+	if v := getenv("TSTAMPS_TOKEN"); v != "" {
 		cfg.Token = v
 	}
 	if urlFlag != "" {

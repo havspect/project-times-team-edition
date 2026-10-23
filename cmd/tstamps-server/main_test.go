@@ -7,19 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/havspect/project-times/internal/auth"
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/auth"
+	"github.com/havspect/tstamps/internal/store"
 )
-
-func TestVersion(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	if code := run([]string{"version"}, &stdout, &stderr); code != 0 {
-		t.Fatalf("exit %d, want 0 (stderr %q)", code, stderr.String())
-	}
-	if got, want := stdout.String(), "times 0.1.0-dev\n"; got != want {
-		t.Fatalf("stdout %q, want %q", got, want)
-	}
-}
 
 func TestUsageErrors(t *testing.T) {
 	cases := []struct {
@@ -45,7 +35,7 @@ func TestUsageErrors(t *testing.T) {
 }
 
 func TestAdminCreate(t *testing.T) {
-	db := filepath.Join(t.TempDir(), "times.db")
+	db := filepath.Join(t.TempDir(), "tstamps.db")
 
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"admin", "create", "--email", "ada@example.com", "--name", "Ada Lovelace", "--db", db}, &stdout, &stderr)
@@ -87,14 +77,14 @@ func TestAdminCreate(t *testing.T) {
 
 func TestAdminCreateUsesEnvDB(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "env.db")
-	t.Setenv("TIMES_DB", db)
+	t.Setenv("TSTAMPS_DB", db)
 
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"admin", "create", "--email", "grace@example.com", "--name", "Grace Hopper"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit %d, want 0 (stderr %q)", code, stderr.String())
 	}
 	if _, err := os.Stat(db); err != nil {
-		t.Fatalf("TIMES_DB %s was not written: %v", db, err)
+		t.Fatalf("TSTAMPS_DB %s was not written: %v", db, err)
 	}
 
 	st, err := store.Open(db)
@@ -104,12 +94,12 @@ func TestAdminCreateUsesEnvDB(t *testing.T) {
 	defer st.Close()
 
 	if _, err := st.UserByEmail("grace@example.com"); err != nil {
-		t.Fatalf("admin not in TIMES_DB database: %v", err)
+		t.Fatalf("admin not in TSTAMPS_DB database: %v", err)
 	}
 }
 
 func TestAdminCreateDuplicateEmail(t *testing.T) {
-	db := filepath.Join(t.TempDir(), "times.db")
+	db := filepath.Join(t.TempDir(), "tstamps.db")
 	args := []string{"admin", "create", "--email", "ada@example.com", "--name", "Ada", "--db", db}
 
 	var stdout, stderr bytes.Buffer
@@ -131,7 +121,7 @@ func TestAdminCreateDuplicateEmail(t *testing.T) {
 }
 
 func TestAdminCreateMissingEmail(t *testing.T) {
-	db := filepath.Join(t.TempDir(), "times.db")
+	db := filepath.Join(t.TempDir(), "tstamps.db")
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"admin", "create", "--name", "Ada", "--db", db}, &stdout, &stderr); code != 2 {
 		t.Fatalf("exit %d, want 2", code)

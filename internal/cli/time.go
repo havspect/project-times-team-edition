@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/havspect/project-times/internal/client"
+	"github.com/havspect/tstamps/internal/client"
 )
 
 // Dates the CLI accepts on its own; the API takes plain YYYY-MM-DD.

@@ -8,8 +8,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/havspect/project-times/internal/entry"
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/entry"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 // timerConflict is the 409 a second start gets: the RFC 9457 problem fields plus

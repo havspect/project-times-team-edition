@@ -1,4 +1,4 @@
-// Package mcp exposes the Project Times API as MCP tools over stdio. It talks
+// Package mcp exposes the Tstamps API as MCP tools over stdio. It talks
 // through internal/client with the same config and token as the CLI, so it needs
 // no database and no server internals.
 package mcp
@@ -9,8 +9,8 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/havspect/project-times/internal/client"
-	"github.com/havspect/project-times/internal/version"
+	"github.com/havspect/tstamps/internal/client"
+	"github.com/havspect/tstamps/internal/version"
 )
 
 // Client is the API surface the tools use. *client.Client is the production
@@ -32,7 +32,7 @@ type Client interface {
 // New returns the MCP server with every tool registered.
 func New(c Client) *sdk.Server {
 	s := sdk.NewServer(&sdk.Implementation{
-		Name: "times", Title: "Project Times", Version: version.Version,
+		Name: "tstamps", Title: "Tstamps", Version: version.Version,
 	}, nil)
 	register(s, c)
 	return s
@@ -197,7 +197,7 @@ type listEntriesInput struct {
 type reportInput struct {
 	From      string `json:"from,omitempty" jsonschema:"inclusive start date, YYYY-MM-DD; omit both from and to for the current ISO week"`
 	To        string `json:"to,omitempty" jsonschema:"exclusive end date, YYYY-MM-DD; required with from"`
-	By        string `json:"by,omitempty" jsonschema:"bucket: week (default), day or none"`
+	By        string `json:"by,omitempty" jsonschema:"bucket: week (default), day, month or none"`
 	TeamID    uint   `json:"team_id,omitempty" jsonschema:"only entries on this team's projects"`
 	UserID    uint   `json:"user_id,omitempty" jsonschema:"only this user's entries, within what the caller may read"`
 	ProjectID uint   `json:"project_id,omitempty" jsonschema:"only this project's entries"`

@@ -1,4 +1,5 @@
-package main
+// Package e2e walks the whole product: both binaries, one workspace.
+package e2e
 
 import (
 	"bufio"
@@ -19,38 +20,44 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// TestEndToEnd is the v1 acceptance walk: bootstrap an admin from the binary,
-// serve on a free port, build the team structure over the API, then log, time,
-// export and report through the CLI and MCP.
+// TestEndToEnd is the v1 acceptance walk: bootstrap an admin with the server
+// binary, serve on a free port, build the team structure over the API, then log,
+// time, export and report through the CLI and MCP.
 func TestEndToEnd(t *testing.T) {
 	dir := t.TempDir()
-	bin := filepath.Join(dir, "times")
-	build := exec.Command("go", "build", "-o", bin, ".")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build: %v\n%s", err, out)
-	}
+	serverBin := build(t, dir, "tstamps-server", "../cmd/tstamps-server")
+	cliBin := build(t, dir, "tstamps", "../cmd/tstamps")
 
 	home := filepath.Join(dir, "home")
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	env := append(os.Environ(), "HOME="+home, "TIMES_URL=", "TIMES_TOKEN=", "TIMES_DB=")
-	db := filepath.Join(dir, "times.db")
+	env := append(os.Environ(), "HOME="+home, "TSTAMPS_URL=", "TSTAMPS_TOKEN=", "TSTAMPS_DB=")
+	db := filepath.Join(dir, "tstamps.db")
 	cli := func(args ...string) string {
 		t.Helper()
-		cmd := exec.Command(bin, args...)
+		cmd := exec.Command(cliBin, args...)
 		cmd.Env = env
 		out, err := cmd.CombinedOutput()
 		if err != nil {
-			t.Fatalf("times %s: %v\n%s", strings.Join(args, " "), err, out)
+			t.Fatalf("tstamps %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+		return string(out)
+	}
+	server := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command(serverBin, args...)
+		cmd.Env = env
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("tstamps-server %s: %v\n%s", strings.Join(args, " "), err, out)
 		}
 		return string(out)
 	}
 
-	created := cli("admin", "create", "--db", db, "--email", "admin@example.com", "--name", "Ada Admin")
-	adminPassword := passwordFrom(t, created)
+	adminPassword := passwordFrom(t, server("admin", "create", "--db", db, "--email", "admin@example.com", "--name", "Ada Admin"))
 
-	url, stopServer := startServer(t, bin, db)
+	url, stopServer := startServer(t, serverBin, db)
 	defer stopServer()
 
 	cli("login", "--url", url, "--email", "admin@example.com", "--password", adminPassword)
@@ -101,7 +108,7 @@ func TestEndToEnd(t *testing.T) {
 	// The MCP client initializes over stdio and reports the same week.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.Command(bin, "mcp")
+	cmd := exec.Command(cliBin, "mcp")
 	cmd.Env = env
 	cs, err := sdk.NewClient(&sdk.Implementation{Name: "e2e", Version: "1"}, nil).
 		Connect(ctx, &sdk.CommandTransport{Command: cmd}, nil)
@@ -124,6 +131,27 @@ func TestEndToEnd(t *testing.T) {
 	if !strings.Contains(string(body), `"total_seconds":9000`) {
 		t.Fatalf("mcp report = %s, want 9000 seconds", body)
 	}
+}
+
+// build compiles one command into dir and returns its path.
+func build(t *testing.T, dir, name, pkg string) string {
+	t.Helper()
+	bin := filepath.Join(dir, name)
+	if out, err := exec.Command("go", "build", "-o", bin, pkg).CombinedOutput(); err != nil {
+		t.Fatalf("build %s: %v\n%s", pkg, err, out)
+	}
+	return bin
+}
+
+// passwordFrom extracts the only secret on the single output line.
+func passwordFrom(t *testing.T, line string) string {
+	t.Helper()
+	const marker = "initial password: "
+	i := strings.Index(line, marker)
+	if i < 0 {
+		t.Fatalf("output %q has no %q", line, marker)
+	}
+	return strings.TrimSpace(line[i+len(marker):])
 }
 
 // startServer runs the binary on a free port and returns its base URL once it
@@ -189,7 +217,7 @@ func startServer(t *testing.T, bin, db string) (string, func()) {
 // savedToken reads the token the login command stored.
 func savedToken(t *testing.T, home string) string {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(home, ".config", "times", "config.json"))
+	b, err := os.ReadFile(filepath.Join(home, ".config", "tstamps", "config.json"))
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}

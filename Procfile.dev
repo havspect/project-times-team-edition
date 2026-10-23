@@ -1,2 +1,2 @@
-api: go run ./cmd/times serve
+api: air
 web: pnpm --dir web dev

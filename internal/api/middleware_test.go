@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/havspect/project-times/internal/auth"
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/auth"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 func TestBearerTokenAuthenticatesAsItsUser(t *testing.T) {

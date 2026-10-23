@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 // This file is the read side of entries: turn plain dates into a range, then

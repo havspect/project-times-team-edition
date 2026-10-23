@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/havspect/project-times/internal/client"
-	"github.com/havspect/project-times/internal/config"
+	"github.com/havspect/tstamps/internal/client"
+	"github.com/havspect/tstamps/internal/config"
 )
 
 // Client is the API surface the commands use. *client.Client is the production
@@ -72,7 +72,7 @@ func New(out, errOut io.Writer) *App {
 }
 
 // errNoURL is the one setup mistake every client command can hit.
-var errNoURL = errors.New("no server URL; run times login --url URL or set TIMES_URL")
+var errNoURL = errors.New("no server URL; run tstamps login --url URL or set TSTAMPS_URL")
 
 // Run dispatches one client subcommand and returns its exit code: 0 ok, 1
 // error, 2 usage.
@@ -111,12 +111,12 @@ func (a *App) Run(args []string) int {
 }
 
 // unknown reports a command this package does not own. The full command list
-// lives in cmd/times, which prints it.
+// lives in cmd/tstamps, which prints it.
 func (a *App) unknown(cmd string) int {
 	if cmd == "" {
-		fmt.Fprintln(a.Err, "times: no command given; run times help")
+		fmt.Fprintln(a.Err, "tstamps: no command given; run tstamps help")
 	} else {
-		fmt.Fprintf(a.Err, "times: unknown command %q; run times help\n", cmd)
+		fmt.Fprintf(a.Err, "tstamps: unknown command %q; run tstamps help\n", cmd)
 	}
 	return 2
 }
@@ -129,7 +129,7 @@ func newFlags(name string) *flag.FlagSet {
 }
 
 // parseFlags accepts flags before or after the positional arguments, because
-// every usage line puts the project or id first: `times add Timeline --from`.
+// every usage line puts the project or id first: `tstamps add Timeline --from`.
 func parseFlags(fs *flag.FlagSet, args []string) error {
 	return fs.Parse(reorder(fs, args))
 }
@@ -190,7 +190,7 @@ func (a *App) connect(urlFlag, tokenFlag string) (Client, error) {
 
 // fail prints one line and returns 1.
 func (a *App) fail(cmd string, err error) int {
-	fmt.Fprintf(a.Err, "times %s: %v\n", cmd, err)
+	fmt.Fprintf(a.Err, "tstamps %s: %v\n", cmd, err)
 	return 1
 }
 
@@ -201,7 +201,7 @@ func (a *App) usageLine(line string) int {
 }
 
 func (a *App) flagError(cmd string, err error) int {
-	fmt.Fprintf(a.Err, "times %s: %v\n", cmd, err)
+	fmt.Fprintf(a.Err, "tstamps %s: %v\n", cmd, err)
 	return 2
 }
 
@@ -219,7 +219,7 @@ func isSet(fs *flag.FlagSet, name string) bool {
 
 func (a *App) checkNoArgs(cmd string, fs *flag.FlagSet) (int, bool) {
 	if fs.NArg() != 0 {
-		return a.usageLine("times " + cmd), false
+		return a.usageLine("tstamps " + cmd), false
 	}
 	return 0, true
 }

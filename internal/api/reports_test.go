@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 func itoa(id uint) string { return strconv.FormatUint(uint64(id), 10) }

@@ -23,7 +23,7 @@
   const LANE_W = 232
   const ADD_W = 96
   const HEAD_H = 44
-  const LANES_KEY = 'times.timeline.lanes'
+  const LANES_KEY = 'tstamps.timeline.lanes'
 
   const user = session.user
   const userID = user?.id ?? 0
@@ -671,7 +671,7 @@
     <div class="timeline-nav">
       <Button variant="secondary" aria-label="Previous day" onclick={() => shiftDay(-1)}>◀</Button>
       <Button variant="secondary" onclick={goToday}>Today</Button>
-      <Button variant="secondary" aria-label="Next day" onclick={() => shiftDay(1)}>▶</Button>
+      <Button variant="secondary" aria-label="Next day" onclick={() => shiftDay(1)} disabled={day >= today}>▶</Button>
     </div>
     <span class="day-title">{dayTitle}</span>
     <p class="hint">

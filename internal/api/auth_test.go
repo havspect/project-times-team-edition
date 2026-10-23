@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/havspect/project-times/internal/auth"
-	"github.com/havspect/project-times/internal/clock"
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/auth"
+	"github.com/havspect/tstamps/internal/clock"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 type fakeClock struct{ now time.Time }
@@ -32,7 +32,7 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "times.db"))
+	st, err := store.Open(filepath.Join(t.TempDir(), "tstamps.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

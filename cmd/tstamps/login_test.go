@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/havspect/project-times/internal/api"
-	"github.com/havspect/project-times/internal/auth"
-	"github.com/havspect/project-times/internal/clock"
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/api"
+	"github.com/havspect/tstamps/internal/auth"
+	"github.com/havspect/tstamps/internal/clock"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 const loginPassword = "correct horse battery staple"
@@ -21,7 +21,7 @@ const loginPassword = "correct horse battery staple"
 // loginServer starts the API over a store holding one active admin.
 func loginServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "times.db"))
+	st, err := store.Open(filepath.Join(t.TempDir(), "tstamps.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -50,13 +50,13 @@ func loginHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("TIMES_URL", "")
-	t.Setenv("TIMES_TOKEN", "")
+	t.Setenv("TSTAMPS_URL", "")
+	t.Setenv("TSTAMPS_TOKEN", "")
 	return home
 }
 
 func configPath(home string) string {
-	return filepath.Join(home, ".config", "times", "config.json")
+	return filepath.Join(home, ".config", "tstamps", "config.json")
 }
 
 func TestLogin(t *testing.T) {
@@ -134,7 +134,7 @@ func TestLoginWrongPassword(t *testing.T) {
 	if n := strings.Count(stderr.String(), "\n"); n != 1 {
 		t.Fatalf("stderr has %d lines, want one: %q", n, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "times login:") {
+	if !strings.Contains(stderr.String(), "tstamps login:") {
 		t.Fatalf("stderr %q does not name the command", stderr.String())
 	}
 	if stdout.Len() != 0 {
@@ -152,7 +152,7 @@ func TestLoginMissingURL(t *testing.T) {
 	if code := run([]string{"login", "--email", "ada@example.com", "--password", loginPassword}, &stdout, &stderr); code != 2 {
 		t.Fatalf("exit %d, want 2", code)
 	}
-	if !strings.Contains(stderr.String(), "usage: times login") {
+	if !strings.Contains(stderr.String(), "usage: tstamps login") {
 		t.Fatalf("stderr %q does not show the usage line", stderr.String())
 	}
 }

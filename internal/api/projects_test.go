@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 func projectPath(id uint) string {

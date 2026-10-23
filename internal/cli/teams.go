@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/havspect/project-times/internal/client"
+	"github.com/havspect/tstamps/internal/client"
 )
 
 func (a *App) teams(args []string) int {
@@ -55,7 +55,7 @@ func (a *App) teamsMembers(args []string) int {
 		return a.flagError("teams members", err)
 	}
 	if fs.NArg() != 1 {
-		return a.usageLine("times teams members <team>")
+		return a.usageLine("tstamps teams members <team>")
 	}
 	ref := fs.Arg(0)
 

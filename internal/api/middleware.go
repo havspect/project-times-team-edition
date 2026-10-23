@@ -11,12 +11,12 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/havspect/project-times/internal/auth"
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/auth"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 const (
-	sessionCookie = "times_session"
+	sessionCookie = "tstamps_session"
 	// The __Host- prefix makes browsers require https, Path=/ and no Domain;
 	// plain http cannot set it, so the bare name is used there instead.
 	secureSessionCookie = "__Host-" + sessionCookie

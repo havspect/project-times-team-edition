@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/havspect/project-times/internal/client"
+	"github.com/havspect/tstamps/internal/client"
 )
 
 func (a *App) start(args []string) int {
@@ -16,7 +16,7 @@ func (a *App) start(args []string) int {
 		return a.flagError("start", err)
 	}
 	if fs.NArg() != 1 {
-		return a.usageLine("times start <project> [--note \"...\"]")
+		return a.usageLine("tstamps start <project> [--note \"...\"]")
 	}
 	ref := fs.Arg(0)
 
@@ -37,7 +37,7 @@ func (a *App) start(args []string) int {
 	if err != nil {
 		if running, ok := alreadyRunning(err); ok && running != nil {
 			loc := entryLocation(*running, location(me))
-			fmt.Fprintf(a.Err, "times start: already running since %s on %s\n",
+			fmt.Fprintf(a.Err, "tstamps start: already running since %s on %s\n",
 				formatClock(running.StartAt, loc), projectName(a.projectNames(c, me), running.ProjectID))
 			return 1
 		}
@@ -72,7 +72,7 @@ func (a *App) stop(args []string) int {
 	if err != nil {
 		var apiErr *client.Error
 		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
-			fmt.Fprintln(a.Err, "times stop: no running entry")
+			fmt.Fprintln(a.Err, "tstamps stop: no running entry")
 			return 1
 		}
 		return a.fail("stop", err)

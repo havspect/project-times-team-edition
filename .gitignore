@@ -1,4 +1,6 @@
-/times
+/tstamps
+/tstamps-server
+/tmp/
 *.db
 *.db-wal
 *.db-shm

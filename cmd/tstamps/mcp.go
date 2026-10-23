@@ -9,9 +9,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/havspect/project-times/internal/client"
-	"github.com/havspect/project-times/internal/config"
-	"github.com/havspect/project-times/internal/mcp"
+	"github.com/havspect/tstamps/internal/client"
+	"github.com/havspect/tstamps/internal/config"
+	"github.com/havspect/tstamps/internal/mcp"
 )
 
 // mcpCommand runs the MCP server over stdio, with the same config and token as
@@ -23,21 +23,21 @@ func mcpCommand(args []string, stderr io.Writer) int {
 	urlFlag := fs.String("url", "", "server URL")
 	tokenFlag := fs.String("token", "", "personal API token")
 	if err := fs.Parse(args); err != nil {
-		fmt.Fprintf(stderr, "times mcp: %v\n", err)
+		fmt.Fprintf(stderr, "tstamps mcp: %v\n", err)
 		return 2
 	}
 	if fs.NArg() != 0 {
-		fmt.Fprintln(stderr, "usage: times mcp [--url URL] [--token TOKEN]")
+		fmt.Fprintln(stderr, "usage: tstamps mcp [--url URL] [--token TOKEN]")
 		return 2
 	}
 
 	cfg, err := config.LoadClient(*urlFlag, *tokenFlag, os.Getenv)
 	if err != nil {
-		fmt.Fprintf(stderr, "times mcp: %v\n", err)
+		fmt.Fprintf(stderr, "tstamps mcp: %v\n", err)
 		return 1
 	}
 	if cfg.URL == "" {
-		fmt.Fprintln(stderr, "times mcp: no server URL; run times login --url URL or set TIMES_URL")
+		fmt.Fprintln(stderr, "tstamps mcp: no server URL; run tstamps login --url URL or set TSTAMPS_URL")
 		return 1
 	}
 
@@ -45,7 +45,7 @@ func mcpCommand(args []string, stderr io.Writer) int {
 	defer stop()
 
 	if err := mcp.Serve(ctx, client.New(cfg)); err != nil {
-		fmt.Fprintf(stderr, "times mcp: %v\n", err)
+		fmt.Fprintf(stderr, "tstamps mcp: %v\n", err)
 		return 1
 	}
 	return 0

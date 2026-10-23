@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 // The permission vocabulary. Handlers ask these questions instead of re-deriving

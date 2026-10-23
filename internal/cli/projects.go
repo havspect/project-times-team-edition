@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 
-	"github.com/havspect/project-times/internal/client"
+	"github.com/havspect/tstamps/internal/client"
 )
 
 func (a *App) projects(args []string) int {
@@ -66,7 +66,7 @@ func (a *App) projectsAdd(args []string) int {
 		return a.flagError("projects add", err)
 	}
 	if fs.NArg() != 1 || *team == "" {
-		return a.usageLine("times projects add <name> --team <team> [--color #rrggbb]")
+		return a.usageLine("tstamps projects add <name> --team <team> [--color #rrggbb]")
 	}
 	name := fs.Arg(0)
 
@@ -97,7 +97,7 @@ func (a *App) projectsArchive(args []string) int {
 		return a.flagError("projects archive", err)
 	}
 	if fs.NArg() != 1 {
-		return a.usageLine("times projects archive <id>")
+		return a.usageLine("tstamps projects archive <id>")
 	}
 	id, err := parseID(fs.Arg(0))
 	if err != nil {

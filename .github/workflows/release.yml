@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - run: go test ./...
+
+  # The user CLI only. The server embeds the web UI, so it is built where it runs
+  # (just build-prod) and not published here.
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+          - os: windows
+            arch: amd64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 0
+          VERSION: ${{ github.ref_name }}
+        run: go build -trimpath -ldflags "-s -w -X github.com/havspect/tstamps/internal/version.Version=${VERSION#v}" -o dist/tstamps ./cmd/tstamps
+
+      - name: Package
+        env:
+          GOOS: ${{ matrix.os }}
+        run: |
+          mkdir -p out
+          if [ "$GOOS" = windows ]; then
+            zip -q -j "out/tstamps_${GOOS}_${{ matrix.arch }}.zip" dist/tstamps.exe
+          else
+            tar -C dist -czf "out/tstamps_${GOOS}_${{ matrix.arch }}.tar.gz" tstamps
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tstamps-${{ matrix.os }}-${{ matrix.arch }}
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > checksums.txt
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

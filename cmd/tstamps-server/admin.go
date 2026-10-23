@@ -7,9 +7,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/havspect/project-times/internal/auth"
-	"github.com/havspect/project-times/internal/config"
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/auth"
+	"github.com/havspect/tstamps/internal/config"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 func admin(args []string, stdout, stderr io.Writer) int {
@@ -17,10 +17,10 @@ func admin(args []string, stdout, stderr io.Writer) int {
 		return adminUsage(stderr)
 	}
 
-	// Same default as serve, so TIMES_DB reaches both commands.
+	// Same default as serve, so TSTAMPS_DB reaches both commands.
 	cfg, err := config.Load(nil, os.Getenv)
 	if err != nil {
-		fmt.Fprintf(stderr, "times admin create: %v\n", err)
+		fmt.Fprintf(stderr, "tstamps admin create: %v\n", err)
 		return 1
 	}
 
@@ -30,7 +30,7 @@ func admin(args []string, stdout, stderr io.Writer) int {
 	name := fs.String("name", "", "name")
 	db := fs.String("db", cfg.DB, "sqlite file path")
 	if err := fs.Parse(args[1:]); err != nil {
-		fmt.Fprintf(stderr, "times admin create: %v\n", err)
+		fmt.Fprintf(stderr, "tstamps admin create: %v\n", err)
 		return 2
 	}
 	if *email == "" || *name == "" {
@@ -40,34 +40,34 @@ func admin(args []string, stdout, stderr io.Writer) int {
 	// admin create opens the database directly: there is no running server to authenticate against yet.
 	st, err := store.Open(*db)
 	if err != nil {
-		fmt.Fprintf(stderr, "times admin create: open %s: %v\n", *db, err)
+		fmt.Fprintf(stderr, "tstamps admin create: open %s: %v\n", *db, err)
 		return 1
 	}
 	defer st.Close()
 
 	if err := st.Migrate(); err != nil {
-		fmt.Fprintf(stderr, "times admin create: migrate %s: %v\n", *db, err)
+		fmt.Fprintf(stderr, "tstamps admin create: migrate %s: %v\n", *db, err)
 		return 1
 	}
 
 	_, err = st.UserByEmail(*email)
 	if err == nil {
-		fmt.Fprintf(stderr, "times admin create: %s already exists\n", *email)
+		fmt.Fprintf(stderr, "tstamps admin create: %s already exists\n", *email)
 		return 1
 	}
 	if !errors.Is(err, store.ErrNotFound) {
-		fmt.Fprintf(stderr, "times admin create: %v\n", err)
+		fmt.Fprintf(stderr, "tstamps admin create: %v\n", err)
 		return 1
 	}
 
 	password, err := auth.GeneratePassword()
 	if err != nil {
-		fmt.Fprintf(stderr, "times admin create: generate password: %v\n", err)
+		fmt.Fprintf(stderr, "tstamps admin create: generate password: %v\n", err)
 		return 1
 	}
 	hash, err := auth.HashPassword(password)
 	if err != nil {
-		fmt.Fprintf(stderr, "times admin create: hash password: %v\n", err)
+		fmt.Fprintf(stderr, "tstamps admin create: hash password: %v\n", err)
 		return 1
 	}
 
@@ -80,7 +80,7 @@ func admin(args []string, stdout, stderr io.Writer) int {
 		Active:       true,
 	}
 	if err := st.CreateUser(u); err != nil {
-		fmt.Fprintf(stderr, "times admin create: %v\n", err)
+		fmt.Fprintf(stderr, "tstamps admin create: %v\n", err)
 		return 1
 	}
 
@@ -89,6 +89,6 @@ func admin(args []string, stdout, stderr io.Writer) int {
 }
 
 func adminUsage(stderr io.Writer) int {
-	fmt.Fprintln(stderr, "usage: times admin create --email x --name y [--db path]")
+	fmt.Fprintln(stderr, "usage: tstamps admin create --email x --name y [--db path]")
 	return 2
 }

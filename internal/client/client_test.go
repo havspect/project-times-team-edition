@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/havspect/project-times/internal/api"
-	"github.com/havspect/project-times/internal/auth"
-	"github.com/havspect/project-times/internal/clock"
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/api"
+	"github.com/havspect/tstamps/internal/auth"
+	"github.com/havspect/tstamps/internal/clock"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 const testPassword = "correct horse battery staple"
@@ -18,7 +18,7 @@ const testPassword = "correct horse battery staple"
 // newServer starts the real API over a store with one active user.
 func newServer(t *testing.T, email string) *httptest.Server {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "times.db"))
+	st, err := store.Open(filepath.Join(t.TempDir(), "tstamps.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

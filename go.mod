@@ -1,4 +1,4 @@
-module github.com/havspect/project-times
+module github.com/havspect/tstamps
 
 go 1.26.0
 

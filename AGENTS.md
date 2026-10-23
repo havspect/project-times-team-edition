@@ -1,4 +1,4 @@
-# Project Times
+# Tstamps
 
 Team time tracking in Go: one binary, SQLite, embedded Svelte timeline, REST API, CLI, MCP.
 

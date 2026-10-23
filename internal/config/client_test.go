@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/havspect/project-times/internal/client"
+	"github.com/havspect/tstamps/internal/client"
 )
 
 func TestLoadClientPrecedence(t *testing.T) {
@@ -30,13 +30,13 @@ func TestLoadClientPrecedence(t *testing.T) {
 		{
 			name: "env beats file",
 			save: true,
-			env:  map[string]string{"TIMES_URL": "https://env.example", "TIMES_TOKEN": "env-token"},
+			env:  map[string]string{"TSTAMPS_URL": "https://env.example", "TSTAMPS_TOKEN": "env-token"},
 			want: client.Config{URL: "https://env.example", Token: "env-token"},
 		},
 		{
 			name:      "flags beat env and file",
 			save:      true,
-			env:       map[string]string{"TIMES_URL": "https://env.example", "TIMES_TOKEN": "env-token"},
+			env:       map[string]string{"TSTAMPS_URL": "https://env.example", "TSTAMPS_TOKEN": "env-token"},
 			urlFlag:   "https://flag.example",
 			tokenFlag: "flag-token",
 			want:      client.Config{URL: "https://flag.example", Token: "flag-token"},
@@ -71,13 +71,13 @@ func TestLoadClientPrecedence(t *testing.T) {
 
 func TestSaveClient(t *testing.T) {
 	home := t.TempDir()
-	want := client.Config{URL: "https://times.example.com", Token: "ts_secret"}
+	want := client.Config{URL: "https://tstamps.example.com", Token: "ts_secret"}
 
 	if err := saveClient(want, home); err != nil {
 		t.Fatalf("save: %v", err)
 	}
 
-	path := filepath.Join(home, ".config", "times", "config.json")
+	path := filepath.Join(home, ".config", "tstamps", "config.json")
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("stat config: %v", err)
@@ -102,7 +102,7 @@ func TestSaveClient(t *testing.T) {
 
 func TestSaveClientTightensExistingMode(t *testing.T) {
 	home := t.TempDir()
-	dir := filepath.Join(home, ".config", "times")
+	dir := filepath.Join(home, ".config", "tstamps")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestSaveClientTightensExistingMode(t *testing.T) {
 		t.Fatalf("seed file: %v", err)
 	}
 
-	if err := saveClient(client.Config{URL: "https://times.example.com"}, home); err != nil {
+	if err := saveClient(client.Config{URL: "https://tstamps.example.com"}, home); err != nil {
 		t.Fatalf("save: %v", err)
 	}
 	info, err := os.Stat(path)
@@ -125,7 +125,7 @@ func TestSaveClientTightensExistingMode(t *testing.T) {
 
 func TestLoadClientMalformed(t *testing.T) {
 	home := t.TempDir()
-	dir := filepath.Join(home, ".config", "times")
+	dir := filepath.Join(home, ".config", "tstamps")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}

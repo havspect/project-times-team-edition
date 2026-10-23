@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 
-	"github.com/havspect/project-times/internal/client"
+	"github.com/havspect/tstamps/internal/client"
 )
 
 func (a *App) report(args []string) int {

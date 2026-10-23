@@ -8,8 +8,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/havspect/project-times/internal/report"
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/report"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 // reportRoutes registers the report and CSV endpoints.

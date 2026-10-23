@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 // matrixOrigin satisfies the same-origin rule every cookie mutation carries.

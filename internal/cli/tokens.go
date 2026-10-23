@@ -6,7 +6,7 @@ import (
 
 func (a *App) tokens(args []string) int {
 	if len(args) == 0 {
-		return a.usageLine("times tokens <create NAME|ls|rm ID>")
+		return a.usageLine("tstamps tokens <create NAME|ls|rm ID>")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -17,7 +17,7 @@ func (a *App) tokens(args []string) int {
 	case "rm":
 		return a.tokensRemove(rest)
 	}
-	return a.usageLine("times tokens <create NAME|ls|rm ID>")
+	return a.usageLine("tstamps tokens <create NAME|ls|rm ID>")
 }
 
 func (a *App) tokensCreate(args []string) int {
@@ -27,7 +27,7 @@ func (a *App) tokensCreate(args []string) int {
 		return a.flagError("tokens create", err)
 	}
 	if fs.NArg() != 1 {
-		return a.usageLine("times tokens create <name>")
+		return a.usageLine("tstamps tokens create <name>")
 	}
 	c, err := a.connect(*urlFlag, *tokenFlag)
 	if err != nil {
@@ -83,7 +83,7 @@ func (a *App) tokensRemove(args []string) int {
 		return a.flagError("tokens rm", err)
 	}
 	if fs.NArg() != 1 {
-		return a.usageLine("times tokens rm <id>")
+		return a.usageLine("tstamps tokens rm <id>")
 	}
 	id, err := parseID(fs.Arg(0))
 	if err != nil {

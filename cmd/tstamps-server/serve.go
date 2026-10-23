@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/havspect/project-times/internal/api"
-	"github.com/havspect/project-times/internal/clock"
-	"github.com/havspect/project-times/internal/config"
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/api"
+	"github.com/havspect/tstamps/internal/clock"
+	"github.com/havspect/tstamps/internal/config"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 func serve(args []string, stderr io.Writer) int {

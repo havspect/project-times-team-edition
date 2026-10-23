@@ -25,7 +25,7 @@ type Problem = { type?: string; title?: string; detail?: string }
 export function problemMessage(error: unknown, response?: Response): string {
   const problem = (error ?? {}) as Problem
   if (problem.detail) return problem.detail
-  const urn = problem.type?.replace(/^urn:times:error:/, '')
+  const urn = problem.type?.replace(/^urn:tstamps:error:/, '')
   if (urn && urnMessages[urn]) return urnMessages[urn]
   return problem.title ?? (response ? `Request failed (${response.status}).` : 'Something went wrong.')
 }

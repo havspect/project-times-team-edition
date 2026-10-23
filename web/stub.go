@@ -7,8 +7,8 @@ import "net/http"
 
 const notBuilt = `<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>Project Times</title></head>
-<body><p>Project Times UI is not built. Run <code>just build</code>.</p></body>
+<head><meta charset="utf-8"><title>Tstamps</title></head>
+<body><p>Tstamps UI is not built. Run <code>just build</code>.</p></body>
 </html>
 `
 

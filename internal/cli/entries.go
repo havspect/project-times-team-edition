@@ -7,7 +7,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/havspect/project-times/internal/client"
+	"github.com/havspect/tstamps/internal/client"
 )
 
 func (a *App) add(args []string) int {
@@ -21,7 +21,7 @@ func (a *App) add(args []string) int {
 		return a.flagError("add", err)
 	}
 	if fs.NArg() != 1 || *from == "" || *to == "" {
-		return a.usageLine("times add <project> --from 09:00 --to 11:30 [--date today] [--note \"...\"]")
+		return a.usageLine("tstamps add <project> --from 09:00 --to 11:30 [--date today] [--note \"...\"]")
 	}
 	ref := fs.Arg(0)
 
@@ -113,7 +113,7 @@ func (a *App) ls(args []string) int {
 	return 0
 }
 
-// printEntries writes the table `times ls` shows. A running entry has no end
+// printEntries writes the table `tstamps ls` shows. A running entry has no end
 // and counts up to now. Each entry keeps the zone it was logged in.
 func (a *App) printEntries(entries []client.Entry, names map[uint]string, fallback *time.Location) {
 	w := newTable(a.Out)
@@ -157,7 +157,7 @@ func (a *App) edit(args []string) int {
 	if err := parseFlags(fs, args); err != nil {
 		return a.flagError("edit", err)
 	}
-	const usage = "times edit <id> [--project ...] [--from ...] [--to ...] [--timezone ...] [--note \"...\"]"
+	const usage = "tstamps edit <id> [--project ...] [--from ...] [--to ...] [--timezone ...] [--note \"...\"]"
 	if fs.NArg() != 1 {
 		return a.usageLine(usage)
 	}
@@ -236,7 +236,7 @@ func (a *App) rm(args []string) int {
 		return a.flagError("rm", err)
 	}
 	if fs.NArg() != 1 {
-		return a.usageLine("times rm <id>")
+		return a.usageLine("tstamps rm <id>")
 	}
 	id, err := parseID(fs.Arg(0))
 	if err != nil {

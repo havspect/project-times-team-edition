@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/havspect/project-times/internal/client"
+	"github.com/havspect/tstamps/internal/client"
 )
 
 // resolveProject matches a reference by name, then by id. Names are compared
@@ -142,7 +142,7 @@ func parseID(value string) (uint, error) {
 // the command can name the entry instead of repeating the server prose.
 func alreadyRunning(err error) (*client.Entry, bool) {
 	var apiErr *client.Error
-	if !errors.As(err, &apiErr) || apiErr.Type != "urn:times:error:timer-already-running" {
+	if !errors.As(err, &apiErr) || apiErr.Type != "urn:tstamps:error:timer-already-running" {
 		return nil, false
 	}
 	return apiErr.RunningEntry, true

@@ -12,12 +12,12 @@ func TestLoad(t *testing.T) {
 	}{
 		{
 			name: "defaults",
-			want: Config{Addr: ":8080", DB: "./times.db"},
+			want: Config{Addr: ":8080", DB: "./tstamps.db"},
 		},
 		{
 			name: "env only",
-			env:  map[string]string{"TIMES_ADDR": "127.0.0.1:9000", "TIMES_DB": "/srv/times.db"},
-			want: Config{Addr: "127.0.0.1:9000", DB: "/srv/times.db"},
+			env:  map[string]string{"TSTAMPS_ADDR": "127.0.0.1:9000", "TSTAMPS_DB": "/srv/tstamps.db"},
+			want: Config{Addr: "127.0.0.1:9000", DB: "/srv/tstamps.db"},
 		},
 		{
 			name: "flags only",
@@ -27,7 +27,7 @@ func TestLoad(t *testing.T) {
 		{
 			name: "flags beat env",
 			args: []string{"--db", "flags.db"},
-			env:  map[string]string{"TIMES_ADDR": "127.0.0.1:9000", "TIMES_DB": "/srv/times.db"},
+			env:  map[string]string{"TSTAMPS_ADDR": "127.0.0.1:9000", "TSTAMPS_DB": "/srv/tstamps.db"},
 			want: Config{Addr: "127.0.0.1:9000", DB: "flags.db"},
 		},
 		{

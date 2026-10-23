@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/havspect/project-times/internal/client"
+	"github.com/havspect/tstamps/internal/client"
 )
 
 func (a *App) login(args []string) int {
@@ -26,7 +26,7 @@ func (a *App) login(args []string) int {
 		return a.fail("login", err)
 	}
 	if cfg.URL == "" {
-		return a.usageLine("times login --url URL [--email x] [--password y]")
+		return a.usageLine("tstamps login --url URL [--email x] [--password y]")
 	}
 
 	in := bufio.NewReader(a.In)
@@ -49,7 +49,7 @@ func (a *App) login(args []string) int {
 	if err != nil {
 		return a.fail("login", err)
 	}
-	tok, err := c.CreateToken("times login")
+	tok, err := c.CreateToken("tstamps login")
 	if err != nil {
 		return a.fail("login", err)
 	}

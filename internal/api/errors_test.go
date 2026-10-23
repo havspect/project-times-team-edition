@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/havspect/project-times/internal/store"
+	"github.com/havspect/tstamps/internal/store"
 )
 
 // TestFail pins the one place a store rule becomes a status and a URN.
