@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/havspect/project-times/internal/entry"
 	"github.com/havspect/project-times/internal/store"
 )
 
@@ -47,6 +48,20 @@ func fail(err error) *huma.ErrorModel {
 		return problem(http.StatusConflict, urnTimerAlreadyRunning, "the user already has a running entry")
 	case errors.Is(err, store.ErrProjectHasEntries):
 		return problem(http.StatusUnprocessableEntity, urnProjectHasEntries, "a project with entries cannot change team")
+	case errors.Is(err, entry.ErrForbidden):
+		return problem(http.StatusForbidden, urnForbidden, "you can only change your own entries")
+	case errors.Is(err, entry.ErrUnknownProject):
+		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "unknown project")
+	case errors.Is(err, entry.ErrArchivedProject):
+		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "project is archived")
+	case errors.Is(err, entry.ErrRetimeRunning):
+		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "a running entry needs an end_at to be retimed")
+	case errors.Is(err, entry.ErrTooLong):
+		return problem(http.StatusUnprocessableEntity, urnEntryTooLong, "an entry may not be longer than 24 hours")
+	case errors.Is(err, entry.ErrFuture):
+		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "an entry may not be more than 5 minutes in the future")
+	case errors.Is(err, entry.ErrInvalidRange):
+		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "end must be after start")
 	}
 	return internal(err)
 }

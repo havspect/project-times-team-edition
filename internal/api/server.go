@@ -12,6 +12,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
 	"github.com/havspect/project-times/internal/clock"
+	"github.com/havspect/project-times/internal/entry"
 	"github.com/havspect/project-times/internal/store"
 	"github.com/havspect/project-times/internal/version"
 )
@@ -21,12 +22,13 @@ const (
 	openAPIPath = apiPrefix + "/openapi"
 )
 
-// Server is the state the handlers share: the store, the injected clock, and the
-// in-memory login limiter.
+// Server is the state the handlers share: the store, the entry service, the
+// injected clock, and the in-memory login limiter.
 type Server struct {
-	Store *store.Store
-	Clock clock.Clock
-	limit loginLimiter
+	Store   *store.Store
+	Clock   clock.Clock
+	entries *entry.Service
+	limit   loginLimiter
 }
 
 // New returns the http.Handler for the whole API and web surface.
@@ -57,7 +59,7 @@ func New(st *store.Store, clk clock.Clock) http.Handler {
 
 	mux.HandleFunc("GET /healthz", health)
 
-	s := &Server{Store: st, Clock: clk}
+	s := &Server{Store: st, Clock: clk, entries: entry.New(st, clk)}
 	s.authRoutes(api)
 	s.entryRoutes(api)
 	s.projectRoutes(api)

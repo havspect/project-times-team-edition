@@ -153,19 +153,8 @@ func (s *Server) createEntry(ctx context.Context, in *entryCreateInput) (*entryO
 	if err != nil {
 		return nil, err
 	}
-	if err := s.requireLoggableProject(in.Body.ProjectID); err != nil {
-		return nil, err
-	}
-	now := s.Clock.Now()
-	if err := entry.Validate(in.Body.StartAt, in.Body.EndAt, now); err != nil {
-		return nil, entryRuleProblem(err)
-	}
-	e := &store.Entry{
-		UserID: u.ID, ProjectID: in.Body.ProjectID,
-		StartAt: in.Body.StartAt, EndAt: &in.Body.EndAt, Note: in.Body.Note,
-		CreatedAt: now, UpdatedAt: now,
-	}
-	if err := s.Store.CreateEntry(e); err != nil {
+	e, err := s.entries.Create(u.ID, in.Body.ProjectID, in.Body.StartAt, in.Body.EndAt, in.Body.Note)
+	if err != nil {
 		return nil, fail(err)
 	}
 	return &entryOutput{Body: entryResponseOf(e)}, nil
@@ -186,57 +175,12 @@ func (s *Server) patchEntry(ctx context.Context, in *entryPatchInput) (*entryOut
 	if err != nil {
 		return nil, err
 	}
-	e, err := s.Store.EntryByID(in.ID)
+	e, err := s.entries.Patch(u.ID, in.ID, entry.Patch{
+		ProjectID: in.Body.ProjectID, StartAt: in.Body.StartAt,
+		EndAt: in.Body.EndAt, Note: in.Body.Note,
+	})
 	if err != nil {
 		return nil, fail(err)
-	}
-	if e.DeletedAt != nil {
-		return nil, problem(http.StatusNotFound, urnNotFound, "not found")
-	}
-	if e.UserID != u.ID {
-		return nil, problem(http.StatusForbidden, urnForbidden, "you can only edit your own entries")
-	}
-	changes := map[string]any{}
-	if in.Body.ProjectID != nil && *in.Body.ProjectID != e.ProjectID {
-		if err := s.requireLoggableProject(*in.Body.ProjectID); err != nil {
-			return nil, err
-		}
-		e.ProjectID = *in.Body.ProjectID
-		changes["project_id"] = e.ProjectID
-	}
-	if in.Body.Note != nil {
-		e.Note = *in.Body.Note
-		changes["note"] = e.Note
-	}
-
-	start := e.StartAt
-	if in.Body.StartAt != nil {
-		start = *in.Body.StartAt
-	}
-	var end time.Time
-	switch {
-	case in.Body.EndAt != nil:
-		end = *in.Body.EndAt
-	case e.EndAt != nil:
-		end = *e.EndAt
-	default:
-		// A running entry keeps running until it is given an end time; that is
-		// how a user answers entry-too-long without losing hours.
-		if in.Body.StartAt != nil {
-			return nil, problem(http.StatusUnprocessableEntity, urnInvalidInput, "a running entry needs an end_at to be retimed")
-		}
-	}
-	if !end.IsZero() && (in.Body.StartAt != nil || in.Body.EndAt != nil) {
-		if err := entry.Validate(start, end, s.Clock.Now()); err != nil {
-			return nil, entryRuleProblem(err)
-		}
-		e.StartAt, e.EndAt = start, &end
-		changes["start_at"], changes["end_at"] = start, end
-	}
-	if len(changes) > 0 {
-		if err := s.Store.UpdateEntry(e.ID, s.Clock.Now(), changes); err != nil {
-			return nil, internal(err)
-		}
 	}
 	return &entryOutput{Body: entryResponseOf(e)}, nil
 }
@@ -250,17 +194,7 @@ func (s *Server) deleteEntry(ctx context.Context, in *entryDeleteInput) (*struct
 	if err != nil {
 		return nil, err
 	}
-	e, err := s.Store.EntryByID(in.ID)
-	if err != nil {
-		return nil, fail(err)
-	}
-	if e.DeletedAt != nil {
-		return nil, problem(http.StatusNotFound, urnNotFound, "not found")
-	}
-	if e.UserID != u.ID {
-		return nil, problem(http.StatusForbidden, urnForbidden, "you can only delete your own entries")
-	}
-	if err := s.Store.SoftDeleteEntry(in.ID, s.Clock.Now()); err != nil {
+	if err := s.entries.Delete(u.ID, in.ID); err != nil {
 		return nil, fail(err)
 	}
 	return &struct{}{}, nil
@@ -274,10 +208,7 @@ func (s *Server) restoreEntry(ctx context.Context, in *entryRestoreInput) (*entr
 	if _, err := requireAdmin(ctx); err != nil {
 		return nil, err
 	}
-	if err := s.Store.RestoreEntry(in.ID, s.Clock.Now()); err != nil {
-		return nil, fail(err)
-	}
-	e, err := s.Store.EntryByID(in.ID)
+	e, err := s.entries.Restore(in.ID)
 	if err != nil {
 		return nil, fail(err)
 	}

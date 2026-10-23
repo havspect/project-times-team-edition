@@ -1,4 +1,5 @@
-// Package entry holds the pure entry/timer rules; "now" is passed in, so tests never sleep.
+// Package entry owns the entry and timer rules and the write-side lifecycle
+// that applies them; "now" is passed in, so tests never sleep.
 package entry
 
 import (
