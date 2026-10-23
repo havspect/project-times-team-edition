@@ -435,3 +435,54 @@ func TestByIDsHelpers(t *testing.T) {
 		}
 	}
 }
+
+// An entry from before the timezone column gets its owner's zone when the
+// column is added; a set zone is never overwritten.
+func TestMigrateAddsAndBackfillsEntryTimezone(t *testing.T) {
+	s, _, p := seedEntryWorld(t)
+	u := &User{Email: "berlin@example.com", Name: "Berlin", PasswordHash: "x", Timezone: "Europe/Berlin", Active: true}
+	if err := s.CreateUser(u); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	// Rebuild the pre-timezone table so AutoMigrate has to add the column.
+	if err := s.db.Exec(`DROP TABLE entries`).Error; err != nil {
+		t.Fatalf("drop entries: %v", err)
+	}
+	if err := s.db.Exec(`CREATE TABLE entries (
+		id integer PRIMARY KEY AUTOINCREMENT, user_id integer NOT NULL,
+		project_id integer NOT NULL, start_at datetime NOT NULL, end_at datetime,
+		note text, created_at datetime, updated_at datetime, deleted_at datetime)`).Error; err != nil {
+		t.Fatalf("create old entries: %v", err)
+	}
+	if err := s.db.Exec(`INSERT INTO entries (user_id, project_id, start_at, end_at) VALUES (?, ?, ?, ?)`,
+		u.ID, p.ID, at(9), at(10)).Error; err != nil {
+		t.Fatalf("insert old entry: %v", err)
+	}
+
+	if err := s.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	rows, err := s.EntriesInRange(at(0), at(23), Scope{UserID: u.ID})
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("entries = %v, err=%v", rows, err)
+	}
+	if rows[0].Timezone != "Europe/Berlin" {
+		t.Fatalf("backfilled timezone = %q, want Europe/Berlin", rows[0].Timezone)
+	}
+
+	kept := &Entry{UserID: u.ID, ProjectID: p.ID, StartAt: at(11), EndAt: ptrAt(at(12)), Timezone: "Australia/Sydney"}
+	if err := s.CreateEntry(kept); err != nil {
+		t.Fatalf("create kept entry: %v", err)
+	}
+	if err := s.Migrate(); err != nil {
+		t.Fatalf("second migrate: %v", err)
+	}
+	got, err := s.EntryByID(kept.ID)
+	if err != nil || got.Timezone != "Australia/Sydney" {
+		t.Fatalf("kept timezone = %q, err=%v; want Australia/Sydney", got.Timezone, err)
+	}
+}
+
+func ptrAt(t time.Time) *time.Time { return &t }

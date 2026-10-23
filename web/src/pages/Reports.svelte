@@ -2,8 +2,16 @@
   import { onMount } from 'svelte'
   import { api, problemMessage } from '../lib/api'
   import type { components } from '../lib/api/schema'
-  import { currentWeek, formatDuration } from '../lib/format'
-  import { csvHref, sectionize, totalSeconds, type ReportRow } from '../lib/reports'
+  import { deviceTimezone, formatDuration } from '../lib/format'
+  import {
+    bucketRange,
+    csvHref,
+    pivot,
+    presetRange,
+    type BucketBy,
+    type RangePreset,
+    type ReportRow,
+  } from '../lib/reports'
   import { session } from '../lib/session.svelte'
   import Button from '../lib/ui/Button.svelte'
   import Input from '../lib/ui/Input.svelte'
@@ -11,34 +19,18 @@
 
   type Project = components['schemas']['ProjectResponse']
   type Team = components['schemas']['TeamResponse']
-  type Filters = {
-    from: string
-    to: string
-    teamID: string
-    projectID: string
-    by: 'week' | 'day'
-  }
 
   const user = session.user
   const isAdmin = user?.is_admin ?? false
-  const zone = user?.timezone ?? 'UTC'
-  const week = currentWeek(zone)
+  const zone = deviceTimezone()
+  const start = presetRange('this-week', zone)
 
-  let from = $state(week.from)
-  let to = $state(week.to)
+  let preset = $state<RangePreset>('this-week')
+  let from = $state(start.from)
+  let to = $state(start.to)
+  let by = $state<BucketBy>(start.by)
   let teamID = $state('')
-  let projectID = $state('')
-  let personID = $state('')
-  let by = $state<'week' | 'day'>('week')
-  // applied is what the table and the CSV link were built from, so editing a
-  // filter without pressing Apply cannot change the download.
-  let applied = $state<Filters>({
-    from: week.from,
-    to: week.to,
-    teamID: '',
-    projectID: '',
-    by: 'week',
-  })
+  let open = $state<number[]>([])
 
   let rows = $state<ReportRow[]>([])
   let projects = $state<Project[]>([])
@@ -48,41 +40,25 @@
 
   const teams = $derived(
     isAdmin
-      ? adminTeams.map((team) => ({
-          id: team.id,
-          name: team.name,
-          archived: team.archived_at !== null,
-        }))
+      ? adminTeams.map((team) => ({ id: team.id, name: team.name, archived: team.archived_at !== null }))
       : (user?.memberships ?? [])
           .filter((member) => member.role === 'lead')
           .map((member) => ({ id: member.team_id, name: member.team, archived: false })),
   )
-
-  // People come from the loaded rows: /users is admin-only, and someone with no
-  // hours in the range has nothing to show anyway.
-  const people = $derived.by(() => {
-    const seen = new Map<number, string>()
-    for (const row of rows) if (!seen.has(row.user_id)) seen.set(row.user_id, row.user)
-    return Array.from(seen, ([id, name]) => ({ id, name }))
-  })
-
-  const shown = $derived(personID ? rows.filter((row) => row.user_id === Number(personID)) : rows)
-  const sections = $derived(sectionize(shown))
-  const total = $derived(totalSeconds(shown))
-  const csv = $derived(
-    csvHref({
-      from: applied.from,
-      to: applied.to,
-      teamID: applied.teamID,
-      projectID: applied.projectID,
-      userID: personID,
-    }),
+  const buckets = $derived(bucketRange(from, to, by))
+  const grouped = $derived(pivot(rows))
+  const columns = $derived(
+    buckets.map((bucket) => grouped.reduce((sum, project) => sum + (project.cells[bucket.key] ?? 0), 0)),
   )
-  const filename = $derived(`reports-${applied.from}-to-${applied.to}.csv`)
+  const grand = $derived(grouped.reduce((sum, project) => sum + project.total, 0))
+  // Project colors are the timeline's, so the same project reads the same in both views.
+  const colors = $derived(new Map(projects.map((project) => [project.id, project.color])))
+  const csv = $derived(csvHref({ from, to, teamID }))
+  const filename = $derived(`reports-${from}-to-${to}.csv`)
 
-  function rangeError(start: string, end: string): string {
-    const f = Date.parse(`${start}T00:00:00Z`)
-    const t = Date.parse(`${end}T00:00:00Z`)
+  function rangeError(left: string, right: string): string {
+    const f = Date.parse(`${left}T00:00:00Z`)
+    const t = Date.parse(`${right}T00:00:00Z`)
     if (Number.isNaN(f) || Number.isNaN(t)) return 'Choose a valid start and end date.'
     if (t <= f) return 'The end date must be after the start date; the end is exclusive.'
     if (t - f > 366 * 86_400_000) return 'Choose a range of at most 366 days.'
@@ -96,41 +72,43 @@
   }
 
   async function load() {
-    error = ''
-    const invalid = rangeError(from, to)
-    if (invalid) {
-      error = invalid
-      return
-    }
-    personID = ''
-    applied = { from, to, teamID, projectID, by }
+    error = rangeError(from, to)
+    if (error) return
     loading = true
-
-    const query: {
-      from: string
-      to: string
-      by: 'week' | 'day'
-      team_id?: number
-      project_id?: number
-    } = { from: applied.from, to: applied.to, by: applied.by }
-    if (applied.teamID) query.team_id = Number(applied.teamID)
-    if (applied.projectID) query.project_id = Number(applied.projectID)
+    const query: { from: string; to: string; by: BucketBy; team_id?: number } = { from, to, by }
+    if (teamID) query.team_id = Number(teamID)
 
     const [reportRes, projectRes] = await Promise.all([
       api.GET('/api/v1/reports', { params: { query } }),
       api.GET('/api/v1/projects', { params: { query: isAdmin ? { all: true } : {} } }),
     ])
-
     if (reportRes.error) {
       error = problemMessage(reportRes.error, reportRes.response)
       rows = []
     } else {
       rows = reportRes.data?.rows ?? []
     }
-    if (projectRes.error) error = problemMessage(projectRes.error, projectRes.response)
-    else projects = projectRes.data ?? []
+    projects = projectRes.data ?? []
+    // A person row under a project that left the range would keep it open for nothing.
+    open = []
     loading = false
   }
+
+  function choosePreset(value: string) {
+    preset = value as RangePreset
+    if (preset === 'custom') return
+    const range = presetRange(preset, zone)
+    from = range.from
+    to = range.to
+    by = range.by
+    void load()
+  }
+
+  function toggle(projectID: number) {
+    open = open.includes(projectID) ? open.filter((id) => id !== projectID) : [...open, projectID]
+  }
+
+  const cell = (seconds: number | undefined) => (seconds ? formatDuration(seconds) : '')
 
   onMount(() => {
     void load()
@@ -145,78 +123,160 @@
 {/if}
 
 <form class="toolbar" onsubmit={(event) => { event.preventDefault(); void load() }}>
-  <Input id="report-from" label="From" type="date" bind:value={from} required />
-  <Input id="report-to" label="To" type="date" bind:value={to} required />
-  <Select id="report-team" label="Team" bind:value={teamID}>
-    <option value="">All teams</option>
-    {#each teams as team (team.id)}
-      <option value={String(team.id)}>{team.name}{team.archived ? ' (archived)' : ''}</option>
-    {/each}
-  </Select>
-  <Select id="report-project" label="Project" bind:value={projectID}>
-    <option value="">All projects</option>
-    {#each projects as project (project.id)}
-      <option value={String(project.id)}>
-        {project.name}{project.archived_at ? ' (archived)' : ''}
-      </option>
-    {/each}
-  </Select>
-  <Select id="report-person" label="Person" bind:value={personID}>
-    <option value="">Everyone</option>
-    {#each people as person (person.id)}
-      <option value={String(person.id)}>{person.name}</option>
-    {/each}
-  </Select>
   <div class="tabs" role="group" aria-label="Group by">
-    <Button variant="secondary" active={by === 'week'} onclick={() => (by = 'week')}>Week</Button>
-    <Button variant="secondary" active={by === 'day'} onclick={() => (by = 'day')}>Day</Button>
+    <Button variant="secondary" active={by === 'day'} onclick={() => { by = 'day'; void load() }}>Day</Button>
+    <Button variant="secondary" active={by === 'week'} onclick={() => { by = 'week'; void load() }}>Week</Button>
+    <Button variant="secondary" active={by === 'month'} onclick={() => { by = 'month'; void load() }}>Month</Button>
   </div>
-  <Button type="submit" disabled={loading}>
-    {loading ? 'Loading…' : 'Apply'}
-  </Button>
-  <p class="hint">
-    The end date is exclusive. Hours are bucketed in each person's timezone; your week ({zone})
-    seeds the range.
-  </p>
+  <Select
+    id="report-range"
+    label="Range"
+    bind:value={preset}
+    onchange={(event) => choosePreset(event.currentTarget.value)}
+  >
+    <option value="this-week">This week</option>
+    <option value="last-week">Last week</option>
+    <option value="this-month">This month</option>
+    <option value="last-month">Last month</option>
+    <option value="this-year">This year</option>
+    <option value="custom">Custom…</option>
+  </Select>
+  {#if preset === 'custom'}
+    <Input id="report-from" label="From" type="date" bind:value={from} required />
+    <Input id="report-to" label="To" type="date" bind:value={to} required />
+    <Button type="submit" disabled={loading}>Apply</Button>
+  {/if}
+  {#if teams.length > 1}
+    <Select
+      id="report-team"
+      label="Team"
+      bind:value={teamID}
+      onchange={(event) => { teamID = event.currentTarget.value; void load() }}
+    >
+      <option value="">All teams</option>
+      {#each teams as team (team.id)}
+        <option value={String(team.id)}>{team.name}{team.archived ? ' (archived)' : ''}</option>
+      {/each}
+    </Select>
+  {/if}
+  <a class="csv" href={csv} download={filename}>Download CSV</a>
 </form>
 
 {#if loading}
   <p>Loading report…</p>
-{:else if shown.length === 0}
+{:else if grouped.length === 0}
   <p>No hours in this range.</p>
 {:else}
-  <p><a href={csv} download={filename}>Download CSV</a></p>
-
-  {#each sections as section (section.bucket)}
-    <h2>{applied.by === 'week' ? 'Week' : 'Day'} {section.bucket}</h2>
-    <table>
-      <thead>
-        <tr>
-          <th scope="col">Person</th>
-          <th scope="col">Project</th>
-          <th scope="col">Hours</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each section.rows as row (`${row.user_id}-${row.project_id}`)}
-          <tr>
-            <td>{row.user}</td>
-            <td>
-              {row.project}
-              {#if row.archived}<span class="badge">archived</span>{/if}
-            </td>
-            <td>{formatDuration(row.seconds)}</td>
-          </tr>
+  <table class="report">
+    <thead>
+      <tr>
+        <th scope="col">Project</th>
+        {#each buckets as bucket (bucket.key)}
+          <th scope="col" class="num">{bucket.label}</th>
         {/each}
-      </tbody>
-      <tfoot>
+        <th scope="col" class="num">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {#each grouped as project (project.project_id)}
         <tr>
-          <th scope="row" colspan="2">Subtotal</th>
-          <td>{formatDuration(section.seconds)}</td>
+          <th scope="row">
+            <button
+              type="button"
+              class="project"
+              aria-expanded={open.includes(project.project_id)}
+              onclick={() => toggle(project.project_id)}
+            >
+              <span class="caret" aria-hidden="true">{open.includes(project.project_id) ? '▾' : '▸'}</span>
+              <span class="swatch" style:background={colors.get(project.project_id) ?? 'var(--muted)'}></span>
+              {project.project}
+              {#if project.archived}<span class="badge">archived</span>{/if}
+            </button>
+          </th>
+          {#each buckets as bucket (bucket.key)}
+            <td class="num">{cell(project.cells[bucket.key])}</td>
+          {/each}
+          <td class="num">{formatDuration(project.total)}</td>
         </tr>
-      </tfoot>
-    </table>
-  {/each}
-
-  <p>Total: <strong>{formatDuration(total)}</strong></p>
+        {#if open.includes(project.project_id)}
+          {#each project.people as person (person.user_id)}
+            <tr class="person">
+              <td>{person.user}</td>
+              {#each buckets as bucket (bucket.key)}
+                <td class="num">{cell(person.cells[bucket.key])}</td>
+              {/each}
+              <td class="num">{formatDuration(person.total)}</td>
+            </tr>
+          {/each}
+        {/if}
+      {/each}
+    </tbody>
+    <tfoot>
+      <tr>
+        <th scope="row">Total</th>
+        {#each columns as seconds, index (buckets[index].key)}
+          <td class="num">{cell(seconds)}</td>
+        {/each}
+        <td class="num">{formatDuration(grand)}</td>
+      </tr>
+    </tfoot>
+  </table>
 {/if}
+
+<style>
+  .csv {
+    align-self: end;
+    margin-left: auto;
+    padding-bottom: var(--space-2);
+  }
+
+  .report .num {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .report tfoot th,
+  .report tfoot td {
+    border-top: 2px solid var(--text);
+    border-bottom: 0;
+    font-weight: 650;
+  }
+
+  .report tbody th {
+    font-weight: inherit;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: inherit;
+    color: inherit;
+  }
+
+  .project {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) 0;
+    background: none;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+  }
+
+  .caret {
+    width: 0.75rem;
+    color: var(--muted);
+    font-size: 0.75rem;
+  }
+
+  .project:hover {
+    color: var(--accent);
+  }
+
+  .person td {
+    color: var(--muted);
+  }
+
+  .person td:first-child {
+    padding-left: var(--space-5);
+  }
+</style>

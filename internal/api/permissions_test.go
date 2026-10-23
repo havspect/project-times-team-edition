@@ -190,6 +190,7 @@ func TestPermissionMatrix(t *testing.T) {
 					"project_id": f.ProjectA.ID,
 					"start_at":   f.clock.now.Add(-2 * time.Hour),
 					"end_at":     f.clock.now.Add(-time.Hour),
+					"timezone":   "UTC",
 				}
 			},
 			want: cells{201, 201, 201, 201, 201, 401},
@@ -226,7 +227,7 @@ func TestPermissionMatrix(t *testing.T) {
 		{
 			name: "timer start", method: http.MethodPost,
 			path: func(*testing.T, *fixture, *store.User) string { return apiPrefix + "/timer/start" },
-			body: func(f *fixture) any { return map[string]any{"project_id": f.ProjectA.ID} },
+			body: func(f *fixture) any { return map[string]any{"project_id": f.ProjectA.ID, "timezone": "UTC"} },
 			want: cells{201, 201, 201, 201, 201, 401},
 		},
 		{

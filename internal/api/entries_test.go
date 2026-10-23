@@ -35,7 +35,7 @@ func (f *fixture) ownRunning(t *testing.T, u *store.User) *store.Entry {
 // subject is not the create endpoint.
 func (f *fixture) entry(t *testing.T, u *store.User, p *store.Project, start, end time.Time, note string) *store.Entry {
 	t.Helper()
-	e := &store.Entry{UserID: u.ID, ProjectID: p.ID, StartAt: start, EndAt: &end, Note: note}
+	e := &store.Entry{UserID: u.ID, ProjectID: p.ID, StartAt: start, EndAt: &end, Timezone: u.Timezone, Note: note}
 	if err := f.st.CreateEntry(e); err != nil {
 		t.Fatalf("create entry: %v", err)
 	}
@@ -45,7 +45,7 @@ func (f *fixture) entry(t *testing.T, u *store.User, p *store.Project, start, en
 // running seeds a running entry.
 func (f *fixture) running(t *testing.T, u *store.User, p *store.Project, start time.Time, note string) *store.Entry {
 	t.Helper()
-	e := &store.Entry{UserID: u.ID, ProjectID: p.ID, StartAt: start, Note: note}
+	e := &store.Entry{UserID: u.ID, ProjectID: p.ID, StartAt: start, Timezone: u.Timezone, Note: note}
 	if err := f.st.CreateEntry(e); err != nil {
 		t.Fatalf("create running entry: %v", err)
 	}
@@ -58,13 +58,13 @@ func TestEntryCreateAndList(t *testing.T) {
 	end := f.clock.now.Add(-time.Hour)
 
 	rec := sendAs(t, f, f.Member, http.MethodPost, apiPrefix+"/entries", map[string]any{
-		"project_id": f.ProjectA.ID, "start_at": start, "end_at": end, "note": "drag, resize, snap",
+		"project_id": f.ProjectA.ID, "start_at": start, "end_at": end, "timezone": "UTC", "note": "drag, resize, snap",
 	})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create = %d, want 201: %s", rec.Code, rec.Body)
 	}
 	created := decode[entryResponse](t, rec)
-	if created.ID == 0 || created.UserID != f.Member.ID || created.ProjectID != f.ProjectA.ID || created.Note != "drag, resize, snap" {
+	if created.ID == 0 || created.UserID != f.Member.ID || created.ProjectID != f.ProjectA.ID || created.Note != "drag, resize, snap" || created.Timezone != "UTC" {
 		t.Fatalf("created = %+v", created)
 	}
 	if created.EndAt == nil || !created.EndAt.Equal(end) {
@@ -101,11 +101,11 @@ func TestEntryCreateRejectsRuleBreaks(t *testing.T) {
 		body map[string]any
 		urn  string
 	}{
-		{"end before start", map[string]any{"project_id": f.ProjectA.ID, "start_at": now.Add(-time.Hour), "end_at": now.Add(-2 * time.Hour)}, urnInvalidInput},
-		{"longer than 24h", map[string]any{"project_id": f.ProjectA.ID, "start_at": now.Add(-25 * time.Hour), "end_at": now.Add(-time.Minute)}, urnEntryTooLong},
-		{"starts in the future", map[string]any{"project_id": f.ProjectA.ID, "start_at": now.Add(6 * time.Minute), "end_at": now.Add(time.Hour)}, urnInvalidInput},
-		{"archived project", map[string]any{"project_id": f.ProjectB.ID, "start_at": now.Add(-time.Hour), "end_at": now}, urnInvalidInput},
-		{"unknown project", map[string]any{"project_id": uint(999), "start_at": now.Add(-time.Hour), "end_at": now}, urnInvalidInput},
+		{"end before start", map[string]any{"project_id": f.ProjectA.ID, "start_at": now.Add(-time.Hour), "end_at": now.Add(-2 * time.Hour), "timezone": "UTC"}, urnInvalidInput},
+		{"longer than 24h", map[string]any{"project_id": f.ProjectA.ID, "start_at": now.Add(-25 * time.Hour), "end_at": now.Add(-time.Minute), "timezone": "UTC"}, urnEntryTooLong},
+		{"starts in the future", map[string]any{"project_id": f.ProjectA.ID, "start_at": now.Add(6 * time.Minute), "end_at": now.Add(time.Hour), "timezone": "UTC"}, urnInvalidInput},
+		{"archived project", map[string]any{"project_id": f.ProjectB.ID, "start_at": now.Add(-time.Hour), "end_at": now, "timezone": "UTC"}, urnInvalidInput},
+		{"unknown project", map[string]any{"project_id": uint(999), "start_at": now.Add(-time.Hour), "end_at": now, "timezone": "UTC"}, urnInvalidInput},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

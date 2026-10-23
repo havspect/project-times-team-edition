@@ -93,6 +93,7 @@ func (s *Server) getTimer(ctx context.Context, _ *struct{}) (*timerOutput, error
 type timerStartInput struct {
 	Body struct {
 		ProjectID uint   `json:"project_id" required:"true" minimum:"1"`
+		Timezone  string `json:"timezone" required:"true" minLength:"1" doc:"IANA zone the entry is started in, e.g. Europe/Berlin."`
 		Note      string `json:"note,omitempty"`
 	}
 }
@@ -102,7 +103,10 @@ func (s *Server) startTimer(ctx context.Context, in *timerStartInput) (*entryOut
 	if err != nil {
 		return nil, err
 	}
-	e, err := s.entries.Start(u.ID, in.Body.ProjectID, in.Body.Note)
+	if err := validateTimezone(in.Body.Timezone); err != nil {
+		return nil, err
+	}
+	e, err := s.entries.Start(u.ID, in.Body.ProjectID, in.Body.Timezone, in.Body.Note)
 	if err != nil {
 		var running *entry.AlreadyRunning
 		if errors.As(err, &running) {

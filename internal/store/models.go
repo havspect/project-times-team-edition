@@ -63,13 +63,15 @@ type Project struct {
 }
 
 // Entry is one continuous stretch of work on one project. EndAt is nil while it
-// runs; DeletedAt is set instead of removing the row.
+// runs; DeletedAt is set instead of removing the row. Timezone is the IANA zone
+// the entry was logged in, and decides its day and week in reports.
 type Entry struct {
 	ID        uint       `gorm:"primarykey"`
 	UserID    uint       `gorm:"not null;index"`
 	ProjectID uint       `gorm:"not null;index"`
 	StartAt   time.Time  `gorm:"not null;index"`
 	EndAt     *time.Time `gorm:"index"`
+	Timezone  string     `gorm:"not null;default:''"`
 	Note      string
 	CreatedAt time.Time
 	UpdatedAt time.Time

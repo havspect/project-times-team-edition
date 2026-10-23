@@ -40,7 +40,7 @@ users(id, email, name, password_hash, timezone, is_admin, active, must_change_pa
 teams(id, name, created_at, updated_at, archived_at)
 team_memberships(id, team_id, user_id, role, created_at)         unique(team_id, user_id)
 projects(id, team_id, name, color, created_at, updated_at, archived_at)
-entries(id, user_id, project_id, start_at, end_at, note, created_at, updated_at, deleted_at)
+entries(id, user_id, project_id, start_at, end_at, timezone, note, created_at, updated_at, deleted_at)
 sessions(id, user_id, token_hash, expires_at, created_at)
 api_tokens(id, user_id, name, token_hash, created_at, last_used_at, revoked_at)
 ```
@@ -51,7 +51,7 @@ Rules the store enforces, with tests:
 - `end_at > start_at`, and a finished entry is no longer than 24 hours. Stopping a running entry that would exceed 24 hours returns `422 entry-too-long` and leaves it running, so the user picks an end time instead of losing hours.
 - Start and end may not be more than 5 minutes in the future.
 - Overlapping entries are allowed. The timeline marks them; the API does not reject them, because parallel work is real.
-- Entries may span midnight; reports split them at the subject's local midnight.
+- Entries may span midnight; reports split them at the entry's local midnight.
 - Archived projects reject new entries but keep existing ones. Archiving a team archives its projects in the same step; the membership rows stay but grant nothing. A project of an archived team cannot be restored (`422 invalid-input`) until the team is live again.
 - A project's team cannot change once the project has entries (`422 project-has-entries`); while empty it can.
 - Deactivated users cannot log in or use tokens; their hours stay. Deactivating a user stops their running entry at that instant, with the note `stopped on deactivation`.
@@ -64,19 +64,20 @@ Email comparison is case-insensitive; emails are stored lowercased.
 
 ## Time and reporting
 
-All instants are UTC. Each user has an IANA timezone; days and ISO weeks are computed in the timezone of the person whose hours they are ([ADR-0003](./adr/0003-user-timezones-decide-buckets.md)).
+All instants are UTC. Each entry stores the IANA timezone it was logged in; days and ISO weeks are computed in that entry's timezone, not the viewer's and not the user's profile zone ([ADR-0007](./adr/0007-entry-timezones-decide-buckets.md)). A user also has a timezone, used only when a range query has no dates and for display.
 
 - A report takes `from` and `to` as plain dates, `from` inclusive, `to` exclusive.
 - Each query fetches entries overlapping `[from−14h, to+14h)` in UTC, then buckets and splits them in Go.
-- Buckets are `week` (ISO, Monday start), `day` (subject-local date), or `none` (whole range).
+- Buckets are `week` (ISO, Monday start), `day` (the entry's local date), `month` (the entry's local calendar month), or `none` (whole range).
 - A 12-hour entry crossing local midnight becomes two rows, and their seconds still sum to 12h across DST shifts.
+- An entry's `timezone` is an IANA name the server knows; creating one without it (including `POST /timer/start`) is a `422`. `PATCH /entries/{id}` may correct it.
 - Reports include hours on archived projects, labelled as archived. They exclude deleted entries.
 
 CSV export is the detail behind the table: one row per entry per local day.
 
 ```csv
-date,iso_week,user,email,team,project,start,end,seconds,note
-2026-10-19,2026-W43,Ada Lovelace,ada@example.com,Platform,Timeline,2026-10-19T09:00:00+02:00,2026-10-19T11:30:00+02:00,9000,"drag, resize, snap"
+date,iso_week,user,email,team,project,timezone,start,end,seconds,note
+2026-10-19,2026-W43,Ada Lovelace,ada@example.com,Platform,Timeline,Australia/Sydney,2026-10-19T09:00:00+11:00,2026-10-19T11:30:00+11:00,9000,"drag, resize, snap"
 ```
 
 ## HTTP API
@@ -107,14 +108,14 @@ Errors are RFC 9457 problem+json. The stable machine-readable code lives in the 
 | PATCH | `/projects/{id}` | name, color, archive; team only while it has no entries |
 | POST | `/projects/{id}/restore` | admin |
 | GET | `/entries?from&to[&user_id]` | range query, default current week, max 366 days |
-| POST | `/entries` | create a finished entry |
-| PATCH | `/entries/{id}` | move, retime, re-project, re-note |
+| POST | `/entries` | create a finished entry; `timezone` required |
+| PATCH | `/entries/{id}` | move, retime, re-project, re-note, correct `timezone` |
 | DELETE | `/entries/{id}` | soft delete |
 | POST | `/entries/{id}/restore` | admin |
 | GET | `/timer` | current running entry or null |
-| POST | `/timer/start` | `{project_id, note}`; 409 with the running entry if one exists |
+| POST | `/timer/start` | `{project_id, note, timezone}`; 409 with the running entry if one exists |
 | POST | `/timer/stop` | ends at now, optional note |
-| GET | `/reports?from&to&by=week\|day\|none[&team_id][&user_id][&project_id]` | aggregated seconds |
+| GET | `/reports?from&to&by=week\|day\|month\|none[&team_id][&user_id][&project_id]` | aggregated seconds |
 | GET | `/reports.csv` | same filters, entry-per-day rows |
 | GET | `/healthz` | liveness + schema version |
 | GET | `/openapi.json` | OpenAPI 3.1 document, generated from handlers |
@@ -139,17 +140,17 @@ times start <project> [--note "..."]             # project matched by name, then
 times stop [--note "..."]
 times add <project> --from 09:00 --to 11:30 [--date today] [--note "..."]
 times ls [--from 2026-10-19 --to 2026-10-26] [--user me|email] [--json]
-times edit <id> [--project ...] [--from ...] [--to ...] [--note ...]
+times edit <id> [--project ...] [--from ...] [--to ...] [--timezone ...] [--note ...]
 times rm <id>
 times projects [--all] | times projects add <name> --team <team> | times projects archive <id>
 times teams | times teams members <team>
-times report --from 2026-10-19 --to 2026-10-26 [--by week|day] [--json|--csv]
+times report --from 2026-10-19 --to 2026-10-26 [--by week|day|month] [--json|--csv]
 times tokens create <name> | times tokens ls | times tokens rm <id>
 times mcp                                        # MCP server on stdio
 times version
 ```
 
-Times without a date mean today in the caller's timezone. Durations are accepted as `1h30m`. Exit codes: 0 ok, 1 error, 2 usage.
+Times without a date mean today in the machine's timezone. Durations are accepted as `1h30m`. Exit codes: 0 ok, 1 error, 2 usage.
 
 ## MCP
 
@@ -157,14 +158,14 @@ Times without a date mean today in the caller's timezone. Durations are accepted
 
 `whoami`, `list_projects`, `list_entries`, `start_timer`, `stop_timer`, `add_entry`, `update_entry`, `delete_entry`, `report`, `list_teams`, `list_users` (admin).
 
-Tool descriptions state the permission each one needs, so an agent can explain a refusal instead of retrying. No MCP resources; the API is the source of truth.
+Tool descriptions state the permission each one needs, so an agent can explain a refusal instead of retrying. Tools that create an entry take its IANA `timezone`, defaulting to the machine's zone. No MCP resources; the API is the source of truth.
 
 ## Web UI
 
 Svelte 5 + Vite, built to static assets and embedded with `go:embed`. The SPA calls the same API; no server-side rendering.
 
 - **/timeline** — personal canvas timeline, infinite horizontally, wheel to zoom (day ↔ week), drag to create, drag edges to retime, drag body to move, click to edit project and note, running entry pinned at "now", overlaps marked, project colors, 15-minute snap with `Alt` for 1-minute precision, `space` start/stop, `n` new, `Esc` cancel, `Delete` remove.
-- **/reports** — date range, team, person, project filters; totals table per person × project; week/day toggle; total row; CSV button. Read-only; leads and admins only.
+- **/reports** — one table: projects as rows, one column per day, ISO week or calendar month across the range, plus a total column; rows ordered by hours, biggest first, with a grand total row at the bottom. Click a project to unfold one line per person. A Day | Week | Month switch, a range preset (this week / last week / this month / custom) that picks the granularity, a team filter when more than one team is readable, and CSV. Read-only; leads and admins only.
 - **/admin/users**, **/admin/teams**, **/admin/projects** — tables with inline create and edit. No separate settings screen; the workspace name comes from config.
 
 Leads do not get a team timeline in v1; the report table answers their question.
@@ -194,7 +195,7 @@ One build pipeline, in this order: `go run ./cmd/times openapi > web/openapi.jso
 
 `go test ./...` must pass offline, with no external services.
 
-- **entry/report unit tests** — local-midnight splits, DST spring-forward and fall-back, ISO week edges around New Year, 14-hour padding, overlap detection, CSV escaping.
+- **entry/report unit tests** — local-midnight splits, DST spring-forward and fall-back, ISO week edges around New Year, calendar month edges, 14-hour padding, overlap detection, CSV escaping.
 - **store tests** — `AutoMigrate` on an empty temp-dir database, a second boot being a no-op, the partial index actually rejecting a second running entry, archived-project filtering, deleted-entry exclusion, soft delete and restore.
 - **API tests** — `httptest` with the full router; table-driven permission matrix (member / lead of that team / lead of another team / admin) over every endpoint; session and bearer auth incl. expired and revoked; range validation; 409 on double start. One test asserts `/openapi.json` lists every route in the spec table, so a missing Huma registration fails CI.
 - **CLI tests** — subcommands against a fake `client.Interface`; one end-to-end test builds the binary, bootstraps an admin, serves on `:0`, logs in, creates a project and entry, reads a report and a CSV, and performs an MCP initialize + tool call over stdio.

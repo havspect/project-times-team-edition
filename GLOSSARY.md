@@ -68,13 +68,25 @@ _Avoid_: description, comment, remark
 An ISO week: Monday to Sunday, labelled like `2026-W43`.
 _Avoid_: calendar week, pay week
 
+**Month**:
+A calendar month in the entry's timezone, January to December, labelled like `2026-10`.
+_Avoid_: period, cycle, pay period
+
+**Bucket**:
+One column of a report: a day in an entry's timezone, an ISO week, or a calendar month.
+_Avoid_: period, column, interval
+
 **Report**:
-Totals of logged time, grouped by person, project and day or week.
+Totals of logged time, grouped by project and by person, over days, weeks or months.
 _Avoid_: dashboard, stats, analytics
 
 **Timezone**:
-A user's own IANA zone. Decides which day and week that user's hours fall into.
+A user's own IANA zone. A default for undated queries and display; it does not decide which day an entry falls into.
 _Avoid_: locale, region
+
+**Entry timezone**:
+The IANA zone an entry was logged in. Decides which day and week that entry's hours fall into. Changing a user's timezone does not move old entries.
+_Avoid_: offset, local time
 
 **Archived project**:
 A project hidden from project pickers whose logged hours still count in reports. Only an admin restores it.

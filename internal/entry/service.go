@@ -53,8 +53,8 @@ func New(st Store, clk clock.Clock) *Service {
 	return &Service{store: st, clock: clk}
 }
 
-// Create logs a finished entry for userID on projectID.
-func (s *Service) Create(userID, projectID uint, start, end time.Time, note string) (*store.Entry, error) {
+// Create logs a finished entry for userID on projectID in timezone.
+func (s *Service) Create(userID, projectID uint, start, end time.Time, timezone, note string) (*store.Entry, error) {
 	if err := s.loggable(projectID); err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func (s *Service) Create(userID, projectID uint, start, end time.Time, note stri
 	}
 	e := &store.Entry{
 		UserID: userID, ProjectID: projectID,
-		StartAt: start, EndAt: &end, Note: note,
+		StartAt: start, EndAt: &end, Timezone: timezone, Note: note,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if err := s.store.CreateEntry(e); err != nil {
@@ -80,6 +80,7 @@ type Patch struct {
 	ProjectID *uint
 	StartAt   *time.Time
 	EndAt     *time.Time
+	Timezone  *string
 	Note      *string
 }
 
@@ -100,6 +101,10 @@ func (s *Service) Patch(userID, id uint, in Patch) (*store.Entry, error) {
 	if in.Note != nil {
 		e.Note = *in.Note
 		changes["note"] = e.Note
+	}
+	if in.Timezone != nil {
+		e.Timezone = *in.Timezone
+		changes["timezone"] = e.Timezone
 	}
 
 	start := e.StartAt
@@ -150,8 +155,8 @@ func (s *Service) Restore(id uint) (*store.Entry, error) {
 	return s.store.EntryByID(id)
 }
 
-// Start begins a running entry for userID on projectID.
-func (s *Service) Start(userID, projectID uint, note string) (*store.Entry, error) {
+// Start begins a running entry for userID on projectID in timezone.
+func (s *Service) Start(userID, projectID uint, timezone, note string) (*store.Entry, error) {
 	if err := s.loggable(projectID); err != nil {
 		return nil, err
 	}
@@ -165,7 +170,7 @@ func (s *Service) Start(userID, projectID uint, note string) (*store.Entry, erro
 	now := s.clock.Now()
 	e := &store.Entry{
 		UserID: userID, ProjectID: projectID,
-		StartAt: now, Note: note, CreatedAt: now, UpdatedAt: now,
+		StartAt: now, Timezone: timezone, Note: note, CreatedAt: now, UpdatedAt: now,
 	}
 	if err := s.store.CreateEntry(e); err != nil {
 		if !errors.Is(err, store.ErrEntryRunning) {

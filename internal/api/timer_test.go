@@ -15,7 +15,7 @@ func TestTimerStartStop(t *testing.T) {
 	}
 
 	rec := sendAs(t, f, f.Member, http.MethodPost, apiPrefix+"/timer/start", map[string]any{
-		"project_id": f.ProjectA.ID, "note": "writing the timeline",
+		"project_id": f.ProjectA.ID, "timezone": "UTC", "note": "writing the timeline",
 	})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("start = %d, want 201: %s", rec.Code, rec.Body)
@@ -30,7 +30,7 @@ func TestTimerStartStop(t *testing.T) {
 	}
 
 	// The second start is the spec's 409, carrying the entry that is running.
-	rec = sendAs(t, f, f.Member, http.MethodPost, apiPrefix+"/timer/start", map[string]any{"project_id": f.ProjectA.ID})
+	rec = sendAs(t, f, f.Member, http.MethodPost, apiPrefix+"/timer/start", map[string]any{"project_id": f.ProjectA.ID, "timezone": "UTC"})
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("second start = %d, want 409: %s", rec.Code, rec.Body)
 	}
@@ -98,7 +98,7 @@ func TestTimerStartRejectsRules(t *testing.T) {
 		"unknown project":  {999, urnInvalidInput},
 	} {
 		t.Run(name, func(t *testing.T) {
-			wantProblem(t, sendAs(t, f, f.Member, http.MethodPost, apiPrefix+"/timer/start", map[string]any{"project_id": tc.projectID}),
+			wantProblem(t, sendAs(t, f, f.Member, http.MethodPost, apiPrefix+"/timer/start", map[string]any{"project_id": tc.projectID, "timezone": "UTC"}),
 				http.StatusUnprocessableEntity, tc.urn)
 		})
 	}

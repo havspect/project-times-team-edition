@@ -22,11 +22,16 @@ func loadLoc(t *testing.T, name string) *time.Location {
 }
 
 // fixture builds a one-user, one-project, one-team Input so each test only
-// supplies entries and a timezone.
+// supplies entries and a timezone. Entries without their own zone take tz.
 func fixture(tz string, entries ...Entry) Input {
+	for i := range entries {
+		if entries[i].Timezone == "" {
+			entries[i].Timezone = tz
+		}
+	}
 	return Input{
 		Entries:  entries,
-		Users:    []User{{ID: 1, Name: "Ada Lovelace", Email: "ada@example.com", Timezone: tz}},
+		Users:    []User{{ID: 1, Name: "Ada Lovelace", Email: "ada@example.com"}},
 		Projects: []Project{{ID: 1, TeamID: 1, Name: "Timeline"}},
 		Teams:    []Team{{ID: 1, Name: "Platform"}},
 	}
@@ -72,6 +77,33 @@ func TestSplitCrossesLocalMidnight(t *testing.T) {
 	}
 	if segs[0].Seconds != 6*3600 || segs[1].Seconds != 6*3600 {
 		t.Errorf("seconds = %d, %d; want 21600 each", segs[0].Seconds, segs[1].Seconds)
+	}
+}
+
+// 1b. Each entry is bucketed by the zone it was logged in, not by one zone for
+// the whole user: the same instant can be two different local days.
+func TestSplitUsesEachEntrysTimezone(t *testing.T) {
+	at := time.Date(2026, 10, 19, 22, 0, 0, 0, time.UTC)
+	end := at.Add(2 * time.Hour)
+	in := fixture("UTC",
+		Entry{ID: 1, UserID: 1, ProjectID: 1, StartAt: at, EndAt: &end, Timezone: "Australia/Sydney"},
+		Entry{ID: 2, UserID: 1, ProjectID: 1, StartAt: at, EndAt: &end, Timezone: "UTC"},
+	)
+
+	segs := mustSplit(t, in, date(2026, 10, 19), date(2026, 10, 21))
+
+	if len(segs) != 2 {
+		t.Fatalf("got %d segments, want 2: %+v", len(segs), segs)
+	}
+	byZone := map[string]string{}
+	for _, s := range segs {
+		byZone[s.Start.Location().String()] = s.Date
+	}
+	if got := byZone["Australia/Sydney"]; got != "2026-10-20" {
+		t.Errorf("Sydney entry date = %q, want 2026-10-20", got)
+	}
+	if got := byZone["UTC"]; got != "2026-10-19" {
+		t.Errorf("UTC entry date = %q, want 2026-10-19", got)
 	}
 }
 
@@ -200,10 +232,11 @@ func TestAggregateBuckets(t *testing.T) {
 
 	day, dayTotal := Aggregate(segs, "day")
 	week, weekTotal := Aggregate(segs, "week")
+	month, monthTotal := Aggregate(segs, "month")
 	none, noneTotal := Aggregate(segs, "none")
 
-	if dayTotal != weekTotal || weekTotal != noneTotal {
-		t.Errorf("totals differ: day=%d week=%d none=%d", dayTotal, weekTotal, noneTotal)
+	if dayTotal != weekTotal || weekTotal != monthTotal || monthTotal != noneTotal {
+		t.Errorf("totals differ: day=%d week=%d month=%d none=%d", dayTotal, weekTotal, monthTotal, noneTotal)
 	}
 	if dayTotal != 3*3600 {
 		t.Errorf("total = %d, want %d", dayTotal, 3*3600)
@@ -211,14 +244,17 @@ func TestAggregateBuckets(t *testing.T) {
 	if len(day) != 2 {
 		t.Errorf("day rows = %d, want 2", len(day))
 	}
-	if len(week) != 1 || len(none) != 1 {
-		t.Errorf("week rows = %d, none rows = %d; want 1 each", len(week), len(none))
+	if len(week) != 1 || len(month) != 1 || len(none) != 1 {
+		t.Errorf("week rows = %d, month rows = %d, none rows = %d; want 1 each", len(week), len(month), len(none))
 	}
 	if day[0].Bucket != "2026-10-19" || day[1].Bucket != "2026-10-20" {
 		t.Errorf("day buckets = %q, %q; want 2026-10-19, 2026-10-20", day[0].Bucket, day[1].Bucket)
 	}
 	if week[0].Bucket != "2026-W43" {
 		t.Errorf("week bucket = %q, want 2026-W43", week[0].Bucket)
+	}
+	if month[0].Bucket != "2026-10" {
+		t.Errorf("month bucket = %q, want 2026-10", month[0].Bucket)
 	}
 	if none[0].Bucket != "" {
 		t.Errorf("none bucket = %q, want empty", none[0].Bucket)
@@ -248,12 +284,12 @@ func TestWriteCSV(t *testing.T) {
 	if len(records) != 2 {
 		t.Fatalf("got %d records, want 2:\n%s", len(records), buf.String())
 	}
-	wantHeader := []string{"date", "iso_week", "user", "email", "team", "project", "start", "end", "seconds", "note"}
+	wantHeader := []string{"date", "iso_week", "user", "email", "team", "project", "timezone", "start", "end", "seconds", "note"}
 	if !equalStrings(records[0], wantHeader) {
 		t.Errorf("header = %v, want %v", records[0], wantHeader)
 	}
 	wantRow := []string{
-		"2026-10-19", "2026-W43", "Ada Lovelace", "ada@example.com", "Platform", "Timeline",
+		"2026-10-19", "2026-W43", "Ada Lovelace", "ada@example.com", "Platform", "Timeline", "Europe/Berlin",
 		"2026-10-19T09:00:00+02:00", "2026-10-19T11:30:00+02:00", "9000", note,
 	}
 	if !equalStrings(records[1], wantRow) {
@@ -273,7 +309,7 @@ func TestWriteCSVDefusesFormulas(t *testing.T) {
 		if err != nil {
 			t.Fatalf("re-reading CSV for %q: %v", note, err)
 		}
-		if got := records[1][9]; got != "'"+note {
+		if got := records[1][10]; got != "'"+note {
 			t.Errorf("note %q became %q, want a leading quote", note, got)
 		}
 	}

@@ -1,77 +1,133 @@
 import { describe, expect, it } from 'vitest'
-import { csvHref, sectionize, totalSeconds } from './reports'
+import { bucketRange, csvHref, pivot, presetRange } from './reports'
 import type { ReportRow } from './reports'
 
 // row builds a report row; user 1 is Ada, user 2 is Grace.
-function row(bucket: string, userID: number, projectID: number, seconds: number): ReportRow {
+function row(bucket: string, userID: number, projectID: number, seconds: number, archived = false): ReportRow {
   return {
     bucket,
     user_id: userID,
     user: userID === 1 ? 'Ada' : 'Grace',
     project_id: projectID,
     project: projectID === 1 ? 'Site' : 'App',
-    archived: false,
+    archived,
     seconds,
   }
 }
 
-describe('sectionize', () => {
-  it('groups rows by bucket in the order the API sent them', () => {
-    const sections = sectionize([
-      row('2026-W43', 1, 1, 3600),
-      row('2026-W43', 1, 2, 1800),
-      row('2026-W44', 2, 1, 60),
-    ])
+describe('bucketRange', () => {
+  it('lists every day of the range, empty or not', () => {
+    const days = bucketRange('2026-10-19', '2026-10-26', 'day')
 
-    expect(sections.map((section) => section.bucket)).toEqual(['2026-W43', '2026-W44'])
-    expect(sections[0].rows.map((r) => r.project_id)).toEqual([1, 2])
-    expect(sections[1].rows).toHaveLength(1)
+    expect(days.map((day) => day.key)).toEqual([
+      '2026-10-19',
+      '2026-10-20',
+      '2026-10-21',
+      '2026-10-22',
+      '2026-10-23',
+      '2026-10-24',
+      '2026-10-25',
+    ])
+    expect(days[0].label).toBe('Mon 19')
+    expect(days[6].label).toBe('Sun 25')
   })
 
-  it('sums a subtotal per section', () => {
-    const [week] = sectionize([
-      row('2026-W43', 1, 1, 3600),
-      row('2026-W43', 1, 2, 1800),
-      row('2026-W43', 2, 1, 900),
-    ])
+  it('starts weeks on the Monday on or before the range', () => {
+    const weeks = bucketRange('2026-10-01', '2026-11-01', 'week')
 
-    expect(week.seconds).toBe(6300)
+    expect(weeks.map((week) => week.key)).toEqual([
+      '2026-W40',
+      '2026-W41',
+      '2026-W42',
+      '2026-W43',
+      '2026-W44',
+    ])
+    expect(weeks[0].label).toBe('W40')
   })
 
-  it('returns nothing for no rows', () => {
-    expect(sectionize([])).toEqual([])
+  it('uses the ISO week year at the turn of the year', () => {
+    expect(bucketRange('2026-12-28', '2027-01-04', 'week').map((week) => week.key)).toEqual(['2026-W53'])
+  })
+
+  it('lists calendar months, last one included', () => {
+    const months = bucketRange('2026-10-19', '2027-01-01', 'month')
+
+    expect(months.map((month) => month.key)).toEqual(['2026-10', '2026-11', '2026-12'])
+    expect(months.map((month) => month.label)).toEqual(['Oct', 'Nov', 'Dec'])
+  })
+
+  it('returns nothing for an empty or backwards range', () => {
+    expect(bucketRange('2026-10-19', '2026-10-19', 'day')).toEqual([])
+    expect(bucketRange('2026-10-26', '2026-10-19', 'day')).toEqual([])
   })
 })
 
-describe('totalSeconds', () => {
-  it('sums every row', () => {
-    const rows = [row('2026-W43', 1, 1, 3600), row('2026-W43', 1, 2, 1800), row('2026-W44', 2, 1, 60)]
+describe('pivot', () => {
+  it('sums a project per bucket and in total', () => {
+    const [site] = pivot([
+      row('2026-10-19', 1, 1, 3600),
+      row('2026-10-19', 2, 1, 1800),
+      row('2026-10-20', 1, 1, 600),
+    ])
 
-    expect(totalSeconds(rows)).toBe(5460)
+    expect(site.cells).toEqual({ '2026-10-19': 5400, '2026-10-20': 600 })
+    expect(site.total).toBe(6000)
   })
 
-  it('is zero for no rows', () => {
-    expect(totalSeconds([])).toBe(0)
+  it('keeps the people inside each project, biggest first', () => {
+    const [site] = pivot([row('2026-10-19', 1, 1, 600), row('2026-10-19', 2, 1, 3600)])
+
+    expect(site.people.map((person) => person.user)).toEqual(['Grace', 'Ada'])
+    expect(site.people[0].cells).toEqual({ '2026-10-19': 3600 })
+  })
+
+  it('orders projects by hours with archived ones last', () => {
+    const projects = pivot([
+      row('2026-10-19', 1, 1, 600),
+      row('2026-10-19', 1, 2, 3600),
+      row('2026-10-19', 1, 3, 900, true),
+    ])
+
+    expect(projects.map((project) => project.project_id)).toEqual([2, 1, 3])
+  })
+
+  it('returns nothing for no rows', () => {
+    expect(pivot([])).toEqual([])
+  })
+})
+
+describe('presetRange', () => {
+  // Friday 23 October 2026, midday UTC.
+  const now = new Date('2026-10-23T12:00:00Z')
+
+  it('reads a week as days', () => {
+    expect(presetRange('this-week', 'UTC', now)).toEqual({ from: '2026-10-19', to: '2026-10-26', by: 'day' })
+    expect(presetRange('last-week', 'UTC', now)).toEqual({ from: '2026-10-12', to: '2026-10-19', by: 'day' })
+  })
+
+  it('reads a month as weeks', () => {
+    expect(presetRange('this-month', 'UTC', now)).toEqual({ from: '2026-10-01', to: '2026-11-01', by: 'week' })
+    expect(presetRange('last-month', 'UTC', now)).toEqual({ from: '2026-09-01', to: '2026-10-01', by: 'week' })
+  })
+
+  it('reads a year as months', () => {
+    expect(presetRange('this-year', 'UTC', now)).toEqual({ from: '2026-01-01', to: '2027-01-01', by: 'month' })
+  })
+
+  it('uses the person timezone for the month', () => {
+    // 31 October 23:30 UTC is already 1 November in Berlin.
+    const range = presetRange('this-month', 'Europe/Berlin', new Date('2026-10-31T23:30:00Z'))
+    expect(range.from).toBe('2026-11-01')
   })
 })
 
 describe('csvHref', () => {
-  it('always sends the range and only the chosen filters', () => {
-    expect(
-      csvHref({ from: '2026-10-19', to: '2026-10-26', teamID: '', projectID: '', userID: '' }),
-    ).toBe('/api/v1/reports.csv?from=2026-10-19&to=2026-10-26')
+  it('always sends the range and only the chosen team', () => {
+    expect(csvHref({ from: '2026-10-19', to: '2026-10-26', teamID: '' })).toBe(
+      '/api/v1/reports.csv?from=2026-10-19&to=2026-10-26',
+    )
 
-    const href = csvHref({
-      from: '2026-10-19',
-      to: '2026-10-26',
-      teamID: '2',
-      projectID: '7',
-      userID: '5',
-    })
-    const query = new URLSearchParams(href.split('?')[1])
-
+    const query = new URLSearchParams(csvHref({ from: '2026-10-19', to: '2026-10-26', teamID: '2' }).split('?')[1])
     expect(query.get('team_id')).toBe('2')
-    expect(query.get('project_id')).toBe('7')
-    expect(query.get('user_id')).toBe('5')
   })
 })

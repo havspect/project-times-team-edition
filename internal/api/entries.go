@@ -20,6 +20,7 @@ type entryResponse struct {
 	ProjectID uint       `json:"project_id"`
 	StartAt   time.Time  `json:"start_at"`
 	EndAt     *time.Time `json:"end_at"`
+	Timezone  string     `json:"timezone"`
 	Note      string     `json:"note"`
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 }
@@ -27,7 +28,7 @@ type entryResponse struct {
 func entryResponseOf(e *store.Entry) entryResponse {
 	return entryResponse{
 		ID: e.ID, UserID: e.UserID, ProjectID: e.ProjectID,
-		StartAt: e.StartAt, EndAt: e.EndAt, Note: e.Note, DeletedAt: e.DeletedAt,
+		StartAt: e.StartAt, EndAt: e.EndAt, Timezone: e.Timezone, Note: e.Note, DeletedAt: e.DeletedAt,
 	}
 }
 
@@ -121,6 +122,7 @@ type entryCreateInput struct {
 		ProjectID uint      `json:"project_id" required:"true" minimum:"1"`
 		StartAt   time.Time `json:"start_at" required:"true"`
 		EndAt     time.Time `json:"end_at" required:"true"`
+		Timezone  string    `json:"timezone" required:"true" minLength:"1" doc:"IANA zone the entry was logged in, e.g. Europe/Berlin."`
 		Note      string    `json:"note,omitempty"`
 	}
 }
@@ -132,7 +134,10 @@ func (s *Server) createEntry(ctx context.Context, in *entryCreateInput) (*entryO
 	if err != nil {
 		return nil, err
 	}
-	e, err := s.entries.Create(u.ID, in.Body.ProjectID, in.Body.StartAt, in.Body.EndAt, in.Body.Note)
+	if err := validateTimezone(in.Body.Timezone); err != nil {
+		return nil, err
+	}
+	e, err := s.entries.Create(u.ID, in.Body.ProjectID, in.Body.StartAt, in.Body.EndAt, in.Body.Timezone, in.Body.Note)
 	if err != nil {
 		return nil, fail(err)
 	}
@@ -145,6 +150,7 @@ type entryPatchInput struct {
 		ProjectID *uint      `json:"project_id,omitempty" minimum:"1"`
 		StartAt   *time.Time `json:"start_at,omitempty"`
 		EndAt     *time.Time `json:"end_at,omitempty"`
+		Timezone  *string    `json:"timezone,omitempty" minLength:"1" doc:"Correct the IANA zone the entry was logged in."`
 		Note      *string    `json:"note,omitempty"`
 	}
 }
@@ -154,9 +160,14 @@ func (s *Server) patchEntry(ctx context.Context, in *entryPatchInput) (*entryOut
 	if err != nil {
 		return nil, err
 	}
+	if in.Body.Timezone != nil {
+		if err := validateTimezone(*in.Body.Timezone); err != nil {
+			return nil, err
+		}
+	}
 	e, err := s.entries.Patch(u.ID, in.ID, entry.Patch{
 		ProjectID: in.Body.ProjectID, StartAt: in.Body.StartAt,
-		EndAt: in.Body.EndAt, Note: in.Body.Note,
+		EndAt: in.Body.EndAt, Timezone: in.Body.Timezone, Note: in.Body.Note,
 	})
 	if err != nil {
 		return nil, fail(err)

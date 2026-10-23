@@ -42,7 +42,7 @@ func (s *Server) reportRoutes(api huma.API) {
 type reportInput struct {
 	From      string `query:"from" doc:"Inclusive start date, YYYY-MM-DD. Defaults to the start of the caller's ISO week."`
 	To        string `query:"to" doc:"Exclusive end date, YYYY-MM-DD. Required with from."`
-	By        string `query:"by" enum:"week,day,none" default:"week" doc:"Bucket: ISO week, subject-local day, or the whole range."`
+	By        string `query:"by" enum:"week,day,month,none" default:"week" doc:"Bucket: ISO week, entry-local day, entry-local month, or the whole range."`
 	TeamID    uint   `query:"team_id" doc:"Only entries on this team's projects."`
 	UserID    uint   `query:"user_id" doc:"Only this user's entries, within what the caller may read."`
 	ProjectID uint   `query:"project_id" doc:"Only this project's entries."`
@@ -106,7 +106,7 @@ func (s *Server) getReportCSV(ctx context.Context, in *reportInput) (*reportCSVO
 }
 
 // reportSegments loads the caller's readable entries for the range and splits
-// them into subject-local day segments, the input every report shares.
+// them into entry-local day segments, the input every report shares.
 func (s *Server) reportSegments(ctx context.Context, in *reportInput) ([]report.Segment, error) {
 	u, err := requireUser(ctx)
 	if err != nil {
@@ -166,12 +166,13 @@ func toReportInput(entries []store.Entry, users []store.User, projects []store.P
 	for _, e := range entries {
 		in.Entries = append(in.Entries, report.Entry{
 			ID: e.ID, UserID: e.UserID, ProjectID: e.ProjectID,
-			StartAt: e.StartAt, EndAt: e.EndAt, Note: e.Note, DeletedAt: e.DeletedAt,
+			StartAt: e.StartAt, EndAt: e.EndAt, Timezone: e.Timezone,
+			Note: e.Note, DeletedAt: e.DeletedAt,
 		})
 	}
 	for _, u := range users {
 		in.Users = append(in.Users, report.User{
-			ID: u.ID, Name: u.Name, Email: u.Email, Timezone: u.Timezone,
+			ID: u.ID, Name: u.Name, Email: u.Email,
 		})
 	}
 	for _, p := range projects {

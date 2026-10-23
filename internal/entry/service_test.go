@@ -141,13 +141,13 @@ func TestCreateRefusesTheRules(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := svc.Create(1, tc.projectID, tc.start, tc.end, ""); !errors.Is(err, tc.want) {
+			if _, err := svc.Create(1, tc.projectID, tc.start, tc.end, "UTC", ""); !errors.Is(err, tc.want) {
 				t.Errorf("Create = %v, want %v", err, tc.want)
 			}
 		})
 	}
 
-	e, err := svc.Create(1, 1, now.Add(-time.Hour), now, "note")
+	e, err := svc.Create(1, 1, now.Add(-time.Hour), now, "UTC", "note")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -262,11 +262,11 @@ func TestStart(t *testing.T) {
 	archived := now
 	st.projects[2] = store.Project{ID: 2, ArchivedAt: &archived}
 
-	if _, err := svc.Start(1, 2, ""); !errors.Is(err, ErrArchivedProject) {
+	if _, err := svc.Start(1, 2, "UTC", ""); !errors.Is(err, ErrArchivedProject) {
 		t.Errorf("Start on an archived project = %v, want ErrArchivedProject", err)
 	}
 
-	e, err := svc.Start(1, 1, "fresh")
+	e, err := svc.Start(1, 1, "UTC", "fresh")
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -280,7 +280,7 @@ func TestStart(t *testing.T) {
 	}
 
 	var already *AlreadyRunning
-	if _, err := svc.Start(1, 1, ""); !errors.As(err, &already) {
+	if _, err := svc.Start(1, 1, "UTC", ""); !errors.As(err, &already) {
 		t.Errorf("second Start = %v, want AlreadyRunning", err)
 	} else if already.Entry.ID != e.ID {
 		t.Errorf("AlreadyRunning names entry %d, want %d", already.Entry.ID, e.ID)

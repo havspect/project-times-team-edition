@@ -12,7 +12,7 @@ import (
 )
 
 // SchemaVersion is reported by /healthz so support can tell which model set a database has.
-const SchemaVersion = 3
+const SchemaVersion = 4
 
 // ErrNotFound is returned when a lookup matches no row.
 var ErrNotFound = errors.New("not found")
@@ -68,6 +68,13 @@ func (s *Store) Close() error {
 // Migrate creates or updates the tables; running it on every boot is safe.
 func (s *Store) Migrate() error {
 	if err := s.db.AutoMigrate(&User{}, &Session{}, &Team{}, &TeamMembership{}, &Project{}, &APIToken{}, &Entry{}); err != nil {
+		return err
+	}
+	// Entries logged before the column existed get their owner's zone. That is a
+	// guess: the zone they were logged in is not recoverable.
+	if err := s.db.Exec(`UPDATE entries SET timezone = COALESCE(
+		(SELECT timezone FROM users WHERE users.id = entries.user_id), 'UTC')
+		WHERE timezone = '' OR timezone IS NULL`).Error; err != nil {
 		return err
 	}
 	// One running entry per user; struct tags cannot express a partial index.

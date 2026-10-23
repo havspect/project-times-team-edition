@@ -1,0 +1,72 @@
+package cli
+
+import (
+	"bufio"
+	"fmt"
+	"strings"
+
+	"github.com/havspect/project-times/internal/client"
+)
+
+func (a *App) login(args []string) int {
+	fs := newFlags("login")
+	urlFlag, _ := clientFlags(fs)
+	email := fs.String("email", "", "email")
+	password := fs.String("password", "", "password")
+	if err := parseFlags(fs, args); err != nil {
+		return a.flagError("login", err)
+	}
+	if code, ok := a.checkNoArgs("login", fs); !ok {
+		return code
+	}
+
+	// Login keeps no token: it mints one after the session proves the password.
+	cfg, err := a.LoadConfig(*urlFlag, "")
+	if err != nil {
+		return a.fail("login", err)
+	}
+	if cfg.URL == "" {
+		return a.usageLine("times login --url URL [--email x] [--password y]")
+	}
+
+	in := bufio.NewReader(a.In)
+	if *email == "" {
+		fmt.Fprint(a.Out, "email: ")
+		if *email, err = readLine(in); err != nil {
+			return a.fail("login", err)
+		}
+	}
+	if *password == "" {
+		// shortcut: the password prompt echoes what is typed, upgrade to x/term when it is worth a dependency
+		fmt.Fprint(a.Out, "password: ")
+		if *password, err = readLine(in); err != nil {
+			return a.fail("login", err)
+		}
+	}
+
+	c := a.NewClient(client.Config{URL: cfg.URL})
+	me, err := c.Login(*email, *password)
+	if err != nil {
+		return a.fail("login", err)
+	}
+	tok, err := c.CreateToken("times login")
+	if err != nil {
+		return a.fail("login", err)
+	}
+	cfg.Token = tok.Token
+	if err := a.SaveConfig(cfg); err != nil {
+		return a.fail("login", err)
+	}
+
+	fmt.Fprintf(a.Out, "logged in as %s <%s>\n", me.Name, me.Email)
+	return 0
+}
+
+// readLine returns one line without its terminator; EOF with bytes still counts.
+func readLine(in *bufio.Reader) (string, error) {
+	s, err := in.ReadString('\n')
+	if err != nil && s == "" {
+		return "", err
+	}
+	return strings.TrimRight(s, "\r\n"), nil
+}

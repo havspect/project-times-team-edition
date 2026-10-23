@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -49,10 +50,16 @@ func serve(args []string, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log.Info("serving", "addr", cfg.Addr, "db", cfg.DB)
+	ln, err := net.Listen("tcp", cfg.Addr)
+	if err != nil {
+		log.Error("listen", "addr", cfg.Addr, "error", err)
+		return 1
+	}
+
+	log.Info("serving", "addr", ln.Addr().String(), "db", cfg.DB)
 
 	listenErr := make(chan error, 1)
-	go func() { listenErr <- srv.ListenAndServe() }()
+	go func() { listenErr <- srv.Serve(ln) }()
 
 	select {
 	case err := <-listenErr:

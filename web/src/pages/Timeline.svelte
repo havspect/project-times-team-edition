@@ -2,7 +2,7 @@
   import { onMount, tick } from 'svelte'
   import { api, problemMessage } from '../lib/api'
   import type { components } from '../lib/api/schema'
-  import { formatDuration } from '../lib/format'
+  import { deviceTimezone, formatDuration } from '../lib/format'
   import { session } from '../lib/session.svelte'
   import { FINE_SNAP, SNAP, clampRange, orderProjects, snap } from '../lib/timeline/layout'
   import { addDays, instantToWallTime, localDate, wallTimeToInstant, zonedParts } from '../lib/timeline/time'
@@ -27,10 +27,22 @@
 
   const user = session.user
   const userID = user?.id ?? 0
-  const tz = user?.timezone ?? 'UTC'
+  // The axis follows the device, so typing 09:00 puts the block at 09:00.
+  const tz = deviceTimezone()
 
   const clock = new Intl.DateTimeFormat(undefined, { timeZone: tz, hour: '2-digit', minute: '2-digit' })
-  const stamp = new Intl.DateTimeFormat(undefined, { timeZone: tz, dateStyle: 'medium', timeStyle: 'short' })
+  const formatters = new Map<string, { clock: Intl.DateTimeFormat; stamp: Intl.DateTimeFormat }>()
+  function formattersFor(zone: string) {
+    let f = formatters.get(zone)
+    if (!f) {
+      f = {
+        clock: new Intl.DateTimeFormat(undefined, { timeZone: zone, hour: '2-digit', minute: '2-digit' }),
+        stamp: new Intl.DateTimeFormat(undefined, { timeZone: zone, dateStyle: 'medium', timeStyle: 'short' }),
+      }
+      formatters.set(zone, f)
+    }
+    return f
+  }
   const dayLabel = new Intl.DateTimeFormat(undefined, {
     timeZone: 'UTC',
     weekday: 'short',
@@ -76,8 +88,11 @@
   }
 
   function describe(entry: Entry, start: number, end: number): string {
+    const zone = entry.timezone || tz
+    const f = formattersFor(zone)
     const note = entry.note ? `, ${entry.note}` : ''
-    return `${nameOf(entry)}, ${stamp.format(start)} to ${clock.format(end)} (${formatDuration(
+    const elsewhere = zone === tz ? '' : ` (${zone})`
+    return `${nameOf(entry)}, ${f.stamp.format(start)} to ${f.clock.format(end)}${elsewhere} (${formatDuration(
       (end - start) / 1000,
     )})${note}`
   }
@@ -187,6 +202,7 @@
   let panelProject = $state('')
   let panelStart = $state('')
   let panelEnd = $state('')
+  let panelTz = $state(tz)
   let panelNote = $state('')
   const panelRunning = $derived(panelEntry !== null && panelEntry.end_at === null)
 
@@ -393,6 +409,7 @@
           project_id: finished.projectID,
           start_at: new Date(finished.start).toISOString(),
           end_at: new Date(finished.end).toISOString(),
+          timezone: tz,
           note: '',
         },
       })
@@ -431,8 +448,9 @@
     panelMode = 'new'
     panelEntry = null
     panelProject = String(projectID)
-    panelStart = instantToWallTime(tz, range.start)
-    panelEnd = instantToWallTime(tz, range.end)
+    panelTz = tz
+    panelStart = instantToWallTime(panelTz, range.start)
+    panelEnd = instantToWallTime(panelTz, range.end)
     panelNote = ''
     selectedID = null
   }
@@ -441,8 +459,9 @@
     panelMode = 'edit'
     panelEntry = entry
     panelProject = String(entry.project_id)
-    panelStart = instantToWallTime(tz, Date.parse(entry.start_at))
-    panelEnd = entry.end_at ? instantToWallTime(tz, Date.parse(entry.end_at)) : instantToWallTime(tz, now)
+    panelTz = entry.timezone || tz
+    panelStart = instantToWallTime(panelTz, Date.parse(entry.start_at))
+    panelEnd = entry.end_at ? instantToWallTime(panelTz, Date.parse(entry.end_at)) : instantToWallTime(panelTz, now)
     panelNote = entry.note
     selectedID = entry.id
   }
@@ -469,8 +488,8 @@
     try {
       if (panelMode === 'new') {
         const range = clampRange(
-          wallTimeToInstant(tz, panelStart),
-          wallTimeToInstant(tz, panelEnd),
+          wallTimeToInstant(panelTz, panelStart),
+          wallTimeToInstant(panelTz, panelEnd),
           now,
         )
         const { data, error: problem, response } = await api.POST('/api/v1/entries', {
@@ -478,6 +497,7 @@
             project_id: project,
             start_at: new Date(range.start).toISOString(),
             end_at: new Date(range.end).toISOString(),
+            timezone: panelTz,
             note: panelNote,
           },
         })
@@ -494,13 +514,13 @@
         // Only send times that the user touched: a note edit must not round an
         // entry with seconds down to the minute.
         const changed =
-          panelStart !== instantToWallTime(tz, Date.parse(entry.start_at)) ||
+          panelStart !== instantToWallTime(panelTz, Date.parse(entry.start_at)) ||
           (entry.end_at !== null &&
-            panelEnd !== instantToWallTime(tz, Date.parse(entry.end_at)))
+            panelEnd !== instantToWallTime(panelTz, Date.parse(entry.end_at)))
         if (entry.end_at && changed) {
           const range = clampRange(
-            wallTimeToInstant(tz, panelStart),
-            wallTimeToInstant(tz, panelEnd),
+            wallTimeToInstant(panelTz, panelStart),
+            wallTimeToInstant(panelTz, panelEnd),
             now,
           )
           body.start_at = new Date(range.start).toISOString()
@@ -550,7 +570,7 @@
     error = ''
     pending = true
     const { data, error: problem, response } = await api.POST('/api/v1/timer/start', {
-      body: { project_id: projectID },
+      body: { project_id: projectID, timezone: tz },
     })
     pending = false
     if (problem) error = problemMessage(problem, response)

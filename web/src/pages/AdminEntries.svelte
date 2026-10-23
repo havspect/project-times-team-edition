@@ -3,15 +3,14 @@
   import AdminNav from '../lib/AdminNav.svelte'
   import { api, problemMessage } from '../lib/api'
   import type { components } from '../lib/api/schema'
-  import { currentWeek } from '../lib/format'
-  import { session } from '../lib/session.svelte'
+  import { currentWeek, deviceTimezone } from '../lib/format'
   import Button from '../lib/ui/Button.svelte'
   import Input from '../lib/ui/Input.svelte'
 
   type Entry = components['schemas']['EntryResponse']
   type Project = components['schemas']['ProjectResponse']
 
-  const week = currentWeek(session.user?.timezone ?? 'UTC')
+  const week = currentWeek(deviceTimezone())
 
   let from = $state(week.from)
   let to = $state(week.to)
@@ -26,10 +25,10 @@
   const deleted = $derived(entries.filter((entry) => entry.deleted_at))
   const shown = $derived(tab === 'live' ? live : deleted)
 
-  const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' })
-
-  function at(value: string): string {
-    return dateTime.format(new Date(value))
+  function at(value: string, zone: string): string {
+    return new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short', timeZone: zone }).format(
+      new Date(value),
+    )
   }
 
   function projectName(id: number): string {
@@ -123,11 +122,11 @@
           <td>{entry.id}</td>
           <td>{entry.user_id}</td>
           <td>{projectName(entry.project_id)}</td>
-          <td>{at(entry.start_at)}</td>
-          <td>{entry.end_at ? at(entry.end_at) : 'running'}</td>
+          <td>{at(entry.start_at, entry.timezone)}</td>
+          <td>{entry.end_at ? at(entry.end_at, entry.timezone) : 'running'}</td>
           <td>{entry.note || '—'}</td>
           {#if tab === 'deleted'}
-            <td>{entry.deleted_at ? at(entry.deleted_at) : ''}</td>
+            <td>{entry.deleted_at ? at(entry.deleted_at, entry.timezone) : ''}</td>
             <td>
               <Button
                 variant="secondary"

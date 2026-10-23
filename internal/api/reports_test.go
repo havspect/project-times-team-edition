@@ -49,6 +49,7 @@ func TestReportBucketsAndTotals(t *testing.T) {
 	}{
 		{"?from=2026-10-19&to=2026-10-26&by=day", 3, 16200},
 		{"?from=2026-10-19&to=2026-10-26&by=week", 2, 16200},
+		{"?from=2026-10-19&to=2026-10-26&by=month", 2, 16200},
 		{"?from=2026-10-19&to=2026-10-26&by=none", 2, 16200},
 		{"?from=2026-10-19&to=2026-10-26", 2, 16200}, // no by means week buckets
 		{"?by=day", 3, 16200},                        // no range means the caller's current ISO week
@@ -131,7 +132,7 @@ func TestReportCSV(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse csv: %v", err)
 	}
-	wantHeader := []string{"date", "iso_week", "user", "email", "team", "project", "start", "end", "seconds", "note"}
+	wantHeader := []string{"date", "iso_week", "user", "email", "team", "project", "timezone", "start", "end", "seconds", "note"}
 	if len(rows) != 2 {
 		t.Fatalf("csv has %d rows, want header + 1: %q", len(rows), rec.Body)
 	}
@@ -141,7 +142,7 @@ func TestReportCSV(t *testing.T) {
 		}
 	}
 	want := []string{
-		"2026-10-19", "2026-W43", "Linus Torvalds", "linus@example.com", "Platform", "Timeline",
+		"2026-10-19", "2026-W43", "Linus Torvalds", "linus@example.com", "Platform", "Timeline", "UTC",
 		"2026-10-19T09:00:00Z", "2026-10-19T11:30:00Z", "9000", `drag, resize, "snap"`,
 	}
 	for i := range want {
@@ -158,7 +159,7 @@ func TestReportRangeValidation(t *testing.T) {
 		"from alone":     "?from=2026-10-19",
 		"to not after":   "?from=2026-10-26&to=2026-10-26",
 		"longer than yr": "?from=2025-01-01&to=2026-10-26",
-		"unknown bucket": "?by=month",
+		"unknown bucket": "?by=year",
 	} {
 		t.Run(name, func(t *testing.T) {
 			wantProblem(t, sendAs(t, f, f.Member, http.MethodGet, apiPrefix+"/reports"+query, nil),

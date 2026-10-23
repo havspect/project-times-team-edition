@@ -1,4 +1,4 @@
-// Package report turns stored entries into subject-local day segments,
+// Package report turns stored entries into entry-local day segments,
 // aggregated totals and the CSV detail export.
 //
 // It opens no database and reads no clock: the caller loads and scopes the
@@ -23,16 +23,16 @@ type Entry struct {
 	ProjectID uint
 	StartAt   time.Time
 	EndAt     *time.Time
+	Timezone  string // IANA zone the entry was logged in
 	Note      string
 	DeletedAt *time.Time
 }
 
 // User is the part of a stored user a report reads.
 type User struct {
-	ID       uint
-	Name     string
-	Email    string
-	Timezone string
+	ID    uint
+	Name  string
+	Email string
 }
 
 // Project is the part of a stored project a report reads.
@@ -60,9 +60,9 @@ type Input struct {
 	Now time.Time
 }
 
-// Segment is one entry clipped to one subject-local day.
+// Segment is one entry clipped to one entry-local day.
 type Segment struct {
-	Date      string // subject-local "2006-01-02"
+	Date      string // entry-local "2006-01-02"
 	Week      string // ISO week of that local date, e.g. "2026-W43"
 	UserID    uint
 	User      string
@@ -72,7 +72,7 @@ type Segment struct {
 	ProjectID uint
 	Project   string
 	Archived  bool
-	Start     time.Time // instants, already located in the subject's timezone
+	Start     time.Time // instants, already located in the entry's timezone
 	End       time.Time
 	Seconds   int64
 	Note      string
@@ -80,7 +80,7 @@ type Segment struct {
 
 // Row is one (bucket, user, project) total.
 type Row struct {
-	Bucket    string // local date, ISO week, or "" for by=none
+	Bucket    string // local date, ISO week, local month, or "" for by=none
 	UserID    uint
 	User      string
 	Email     string
@@ -92,7 +92,7 @@ type Row struct {
 	Seconds   int64
 }
 
-// Split clips and splits the entries into one segment per subject-local day,
+// Split clips and splits the entries into one segment per entry-local day,
 // keeping only days in [from, to). from and to are UTC-midnight instants whose
 // date components bound the range: from inclusive, to exclusive.
 func Split(in Input, from, to time.Time) ([]Segment, error) {
@@ -130,9 +130,9 @@ func Split(in Input, from, to time.Time) ([]Segment, error) {
 		if !ok {
 			return nil, fmt.Errorf("report: entry %d project %d references unknown team %d", e.ID, project.ID, project.TeamID)
 		}
-		loc, err := location(locations, user.Timezone)
+		loc, err := location(locations, e.Timezone)
 		if err != nil {
-			return nil, fmt.Errorf("report: entry %d user %d: %w", e.ID, user.ID, err)
+			return nil, fmt.Errorf("report: entry %d: %w", e.ID, err)
 		}
 
 		end := e.StartAt
@@ -186,8 +186,9 @@ func Split(in Input, from, to time.Time) ([]Segment, error) {
 	return segments, nil
 }
 
-// Aggregate totals segments by "day", "week" or "none". It returns rows sorted
-// by bucket, then user name, then project name, and the grand total in seconds.
+// Aggregate totals segments by "day", "week", "month" or "none". It returns
+// rows sorted by bucket, then user name, then project name, and the grand total
+// in seconds.
 func Aggregate(segments []Segment, by string) ([]Row, int64) {
 	type key struct {
 		bucket    string
@@ -203,6 +204,8 @@ func Aggregate(segments []Segment, by string) ([]Row, int64) {
 			bucket = s.Date
 		case "week":
 			bucket = s.Week
+		case "month":
+			bucket = s.Date[:7] // entry-local YYYY-MM
 		}
 		k := key{bucket, s.UserID, s.ProjectID}
 		r, ok := index[k]
@@ -247,11 +250,11 @@ func Aggregate(segments []Segment, by string) ([]Row, int64) {
 }
 
 // WriteCSV writes the detail export: one row per segment, with the header
-// date,iso_week,user,email,team,project,start,end,seconds,note
+// date,iso_week,user,email,team,project,timezone,start,end,seconds,note
 func WriteCSV(w io.Writer, segments []Segment) error {
 	cw := csv.NewWriter(w)
 	if err := cw.Write([]string{
-		"date", "iso_week", "user", "email", "team", "project",
+		"date", "iso_week", "user", "email", "team", "project", "timezone",
 		"start", "end", "seconds", "note",
 	}); err != nil {
 		return err
@@ -259,6 +262,7 @@ func WriteCSV(w io.Writer, segments []Segment) error {
 	for _, s := range segments {
 		if err := cw.Write([]string{
 			s.Date, s.Week, csvCell(s.User), csvCell(s.Email), csvCell(s.Team), csvCell(s.Project),
+			s.Start.Location().String(),
 			s.Start.Format(time.RFC3339), s.End.Format(time.RFC3339),
 			strconv.FormatInt(s.Seconds, 10), csvCell(s.Note),
 		}); err != nil {
@@ -283,7 +287,7 @@ func csvCell(s string) string {
 	return s
 }
 
-// location loads and caches the subject's IANA timezone; empty means UTC.
+// location loads and caches an entry's IANA timezone; empty means UTC.
 func location(cache map[string]*time.Location, tz string) (*time.Location, error) {
 	if tz == "" {
 		tz = "UTC"
