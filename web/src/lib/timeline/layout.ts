@@ -56,23 +56,17 @@ export function clampRange(
   return { start: lo, end: hi }
 }
 
-// lanes puts each span in the first lane whose previous span has ended. Input
-// order does not matter: start, then id, keeps the picture stable.
-export function lanes<T extends { id: number; start: number; end: number }>(
-  entries: T[],
-): Map<number, number> {
-  const sorted = [...entries].sort((a, b) => a.start - b.start || a.id - b.id)
-  const lastEnd: number[] = []
-  const out = new Map<number, number>()
-  for (const entry of sorted) {
-    let lane = lastEnd.findIndex((end) => end <= entry.start)
-    if (lane === -1) {
-      lane = lastEnd.length
-      lastEnd.push(entry.end)
-    } else {
-      lastEnd[lane] = entry.end
-    }
-    out.set(entry.id, lane)
+// orderProjects lists the lanes of a day: every project with time, in the
+// order its first block starts, then the projects that are shown but empty.
+// Each project appears once.
+export function orderProjects(
+  blocks: { projectID: number; start: number }[],
+  remembered: number[],
+): number[] {
+  const out: number[] = []
+  for (const block of [...blocks].sort((a, b) => a.start - b.start)) {
+    if (!out.includes(block.projectID)) out.push(block.projectID)
   }
+  for (const id of remembered) if (!out.includes(id)) out.push(id)
   return out
 }

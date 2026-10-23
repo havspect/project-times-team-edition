@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FINE_SNAP, SNAP, clampRange, lanes, snap, timeToX, xToTime } from './layout'
+import { FINE_SNAP, SNAP, clampRange, orderProjects, snap, timeToX, xToTime } from './layout'
 
 const MIN = 60_000
 const HOUR = 60 * MIN
@@ -68,41 +68,31 @@ describe('clampRange', () => {
   })
 })
 
-describe('lanes', () => {
-  it('puts non-overlapping spans in lane 0', () => {
-    const map = lanes([
-      { id: 1, start: NOW, end: NOW + HOUR },
-      { id: 2, start: NOW + HOUR, end: NOW + 2 * HOUR },
-    ])
-    expect(map.get(1)).toBe(0)
-    expect(map.get(2)).toBe(0)
+describe('orderProjects', () => {
+  it('orders projects by their first block, then the empty remembered ones', () => {
+    const order = orderProjects(
+      [
+        { projectID: 3, start: NOW + 2 * HOUR },
+        { projectID: 1, start: NOW },
+        { projectID: 3, start: NOW + 5 * HOUR },
+      ],
+      [2, 1],
+    )
+    expect(order).toEqual([1, 3, 2])
   })
 
-  it('stacks a three-way overlap', () => {
-    const map = lanes([
-      { id: 1, start: NOW, end: NOW + 3 * HOUR },
-      { id: 2, start: NOW + HOUR, end: NOW + 2 * HOUR },
-      { id: 3, start: NOW + 90 * MIN, end: NOW + 4 * HOUR },
-    ])
-    expect(map.get(1)).toBe(0)
-    expect(map.get(2)).toBe(1)
-    expect(map.get(3)).toBe(2)
+  it('lists a project once, even with many blocks', () => {
+    const order = orderProjects(
+      [
+        { projectID: 4, start: NOW },
+        { projectID: 4, start: NOW + HOUR },
+      ],
+      [4],
+    )
+    expect(order).toEqual([4])
   })
 
-  it('reuses a lane once it is free, ordering by start then id', () => {
-    const map = lanes([
-      { id: 3, start: NOW + 2 * HOUR, end: NOW + 3 * HOUR },
-      { id: 2, start: NOW, end: NOW + HOUR },
-      { id: 1, start: NOW + HOUR, end: NOW + 2 * HOUR },
-    ])
-    expect(map.get(2)).toBe(0)
-    expect(map.get(1)).toBe(0)
-    expect(map.get(3)).toBe(0)
-  })
-
-  it('treats a running span as ending at now', () => {
-    const running = { id: 1, start: NOW - HOUR, end: NOW }
-    const later = { id: 2, start: NOW + MIN, end: NOW + HOUR }
-    expect(lanes([running, later]).get(2)).toBe(0)
+  it('follows the remembered order when nothing has time', () => {
+    expect(orderProjects([], [7, 2, 7])).toEqual([7, 2])
   })
 })

@@ -2,76 +2,90 @@
   import { onMount, tick } from 'svelte'
   import { api, problemMessage } from '../lib/api'
   import type { components } from '../lib/api/schema'
-  import { currentWeek, formatDuration } from '../lib/format'
+  import { formatDuration } from '../lib/format'
   import { session } from '../lib/session.svelte'
-  import { FINE_SNAP, SNAP, clampRange, lanes, snap, timeToX, xToTime } from '../lib/timeline/layout'
-  import {
-    addDays,
-    instantToWallTime,
-    localDate,
-    startOfDay,
-    wallTimeToInstant,
-  } from '../lib/timeline/time'
+  import { FINE_SNAP, SNAP, clampRange, orderProjects, snap } from '../lib/timeline/layout'
+  import { addDays, instantToWallTime, localDate, wallTimeToInstant, zonedParts } from '../lib/timeline/time'
 
   type Entry = components['schemas']['EntryResponse']
   type Project = components['schemas']['ProjectResponse']
 
-  const DAY = 86_400_000
-  const HOUR = 3_600_000
   const MIN = 60_000
-  const LANE = 26
-  const DAY_ZOOM = 500
-  const DEFAULT_DAYS = 21
-  const STICKY_PROJECT = 'times.project'
+  const HOUR = 3_600_000
+  // One day is always 24 * HOUR_H tall: positions stay linear in epoch ms, so a
+  // 23- or 25-hour DST day is simply scaled, not lied about.
+  const HOUR_H = 56
+  const AXIS_W = 64
+  const LANE_W = 232
+  const ADD_W = 96
+  const HEAD_H = 44
+  const LANES_KEY = 'times.timeline.lanes'
 
   const user = session.user
   const userID = user?.id ?? 0
   const tz = user?.timezone ?? 'UTC'
 
-  const weekday = new Intl.DateTimeFormat(undefined, { timeZone: 'UTC', weekday: 'short' })
-  const month = new Intl.DateTimeFormat(undefined, { timeZone: 'UTC', month: 'short' })
   const clock = new Intl.DateTimeFormat(undefined, { timeZone: tz, hour: '2-digit', minute: '2-digit' })
   const stamp = new Intl.DateTimeFormat(undefined, { timeZone: tz, dateStyle: 'medium', timeStyle: 'short' })
-
-  function defaultStart(): number {
-    return wallTimeToInstant(tz, `${addDays(currentWeek(tz).from, -7)}T00:00`)
-  }
+  const dayLabel = new Intl.DateTimeFormat(undefined, {
+    timeZone: 'UTC',
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  })
 
   let now = $state(Date.now())
+  let day = $state(localDate(tz, Date.now()))
   let entries = $state<Entry[]>([])
   let projects = $state<Project[]>([])
+  // Lane order is a preference, not data: projects that have entries always
+  // appear even when they are not remembered here.
+  let laneIDs = $state<number[]>([])
   let loading = $state(true)
   let pending = $state(false)
   let error = $state('')
-  let projectID = $state('')
+  let lastProject = $state(0)
   let selectedID = $state<number | null>(null)
 
-  // The window is a strip of local days. Positions are linear in epoch ms, so a
-  // 23- or 25-hour DST day is simply narrower or wider than its neighbours.
-  let windowStart = $state(defaultStart())
-  let windowDays = $state(DEFAULT_DAYS)
-  let viewWidth = $state(0)
-  let dayWidth = $state(0)
   let scrollEl = $state<HTMLDivElement>()
+  let bodyEl = $state<HTMLDivElement>()
+  let pickerEl = $state<HTMLDialogElement>()
+  let pickerFilter = $state('')
 
-  // Panel fields are flat state: the union of a new and an edited entry would
-  // make every binding narrower than Svelte's checker likes.
-  let panelMode = $state<'new' | 'edit' | null>(null)
-  let panelEntry = $state<Entry | null>(null)
-  let panelProject = $state('')
-  let panelStart = $state('')
-  let panelEnd = $state('')
-  let panelNote = $state('')
-  let panelFirst = $state<HTMLSelectElement>()
-  const panelRunning = $derived(panelEntry !== null && panelEntry.end_at === null)
+  const dayStart = $derived(wallTimeToInstant(tz, `${day}T00:00`))
+  const dayEnd = $derived(wallTimeToInstant(tz, `${addDays(day, 1)}T00:00`))
+  const msPerPx = $derived((dayEnd - dayStart) / (24 * HOUR_H))
+  const today = $derived(localDate(tz, now))
+  const dayTitle = $derived(dayLabel.format(new Date(`${day}T00:00:00Z`)))
+  const bodyHeight = 24 * HOUR_H
+
+  function yOf(ms: number): number {
+    return (ms - dayStart) / msPerPx
+  }
+
+  const projectByID = $derived(new Map(projects.map((project) => [project.id, project])))
+  const choices = $derived(projects.filter((project) => !project.archived_at))
+  const running = $derived(entries.find((entry) => entry.end_at === null) ?? null)
+
+  function nameOf(entry: Entry): string {
+    return projectByID.get(entry.project_id)?.name ?? `Archived project #${entry.project_id}`
+  }
+
+  function describe(entry: Entry, start: number, end: number): string {
+    const note = entry.note ? `, ${entry.note}` : ''
+    return `${nameOf(entry)}, ${stamp.format(start)} to ${clock.format(end)} (${formatDuration(
+      (end - start) / 1000,
+    )})${note}`
+  }
 
   type Drag =
     | {
         mode: 'create'
+        projectID: number
         anchor: number
         start: number
         end: number
-        originX: number
+        originY: number
         moved: boolean
         pointerID: number
       }
@@ -82,7 +96,7 @@
         origEnd: number
         start: number
         end: number
-        originX: number
+        originY: number
         moved: boolean
         running: boolean
         pointerID: number
@@ -90,110 +104,96 @@
 
   let drag = $state<Drag | null>(null)
 
-  const week = currentWeek(tz)
-  const weekStart = wallTimeToInstant(tz, `${week.from}T00:00`)
-
-  const msPerPx = $derived(dayWidth > 0 ? DAY / dayWidth : 0)
-  const hasWidth = $derived(viewWidth > 0)
-  const days = $derived.by(() => {
-    if (!msPerPx) return []
-    const first = localDate(tz, windowStart)
-    const out: { date: string; start: number; end: number; left: number; width: number }[] = []
-    for (let i = 0; i < windowDays; i++) {
-      const date = addDays(first, i)
-      const start = wallTimeToInstant(tz, `${date}T00:00`)
-      const end = wallTimeToInstant(tz, `${addDays(date, 1)}T00:00`)
-      out.push({
-        date,
-        start,
-        end,
-        left: timeToX(start, windowStart, msPerPx),
-        width: (end - start) / msPerPx,
-      })
+  function spanOf(entry: Entry): { start: number; end: number } {
+    if (drag && drag.mode !== 'create' && drag.id === entry.id) {
+      return { start: drag.start, end: drag.end }
     }
-    return out
-  })
-  const windowEnd = $derived(days.length ? days[days.length - 1].end : windowStart)
-  const totalWidth = $derived(msPerPx ? (windowEnd - windowStart) / msPerPx : 0)
-  const today = $derived(localDate(tz, now))
-
-  const projectByID = $derived(new Map(projects.map((project) => [project.id, project])))
-  const choices = $derived(projects.filter((project) => !project.archived_at))
-  const running = $derived(entries.find((entry) => entry.end_at === null) ?? null)
-
-  function projectOf(entry: Entry): Project | undefined {
-    return projectByID.get(entry.project_id)
-  }
-
-  function colorOf(entry: Entry): string {
-    return projectOf(entry)?.color || '#64748b'
-  }
-
-  function nameOf(entry: Entry): string {
-    return projectOf(entry)?.name ?? `Archived project #${entry.project_id}`
-  }
-
-  function describe(entry: Entry, start: number, end: number): string {
-    const note = entry.note ? `, ${entry.note}` : ''
-    return `${nameOf(entry)}, ${stamp.format(start)} to ${clock.format(end)} (${formatDuration(
-      (end - start) / 1000,
-    )})${note}`
+    const start = Date.parse(entry.start_at)
+    return { start, end: entry.end_at ? Date.parse(entry.end_at) : now }
   }
 
   const blocks = $derived.by(() => {
     if (!msPerPx) return []
-    const visible = entries
+    return entries
       .map((entry) => {
-        const stored = Date.parse(entry.start_at)
-        const end = entry.end_at ? Date.parse(entry.end_at) : now
-        const active = drag && drag.mode !== 'create' && drag.id === entry.id ? drag : null
-        const start = active ? active.start : stored
-        return { entry, id: entry.id, start, end: Math.max(active ? active.end : end, start + MIN) }
+        const span = spanOf(entry)
+        const bottom = yOf(Math.min(span.end, dayEnd))
+        const top = yOf(Math.max(span.start, dayStart))
+        return { entry, ...span, top, height: bottom - top }
       })
-      .filter((span) => span.end > windowStart && span.start < windowEnd)
-    const laneOf = lanes(visible)
-    return visible.map((span) => {
-      const left = Math.max(0, timeToX(span.start, windowStart, msPerPx))
-      const right = Math.min(totalWidth, timeToX(span.end, windowStart, msPerPx))
-      return { ...span, lane: laneOf.get(span.entry.id) ?? 0, left, width: Math.max(2, right - left) }
+      .filter((block) => block.height > 0)
+      .map((block) => ({ ...block, height: Math.max(6, block.height - 2) }))
+  })
+
+  // Projects with time keep their place by first entry; remembered lanes
+  // without time sit after them, next to the + column.
+  const lanes = $derived.by(() => {
+    const ids = orderProjects(
+      blocks.map((block) => ({ projectID: block.entry.project_id, start: block.start })),
+      laneIDs,
+    )
+    return ids.map((id, index) => {
+      const mine = blocks.filter((block) => block.entry.project_id === id)
+      const project = projectByID.get(id)
+      return {
+        id,
+        name: project?.name ?? `Archived project #${id}`,
+        color: project?.color || '#64748b',
+        x: AXIS_W + index * LANE_W,
+        total: formatDuration(
+          mine.reduce((sum, block) => sum + (Math.min(block.end, dayEnd) - Math.max(block.start, dayStart)) / 1000, 0),
+        ),
+        blocks: mine,
+      }
     })
   })
 
-  const depth = $derived(blocks.reduce((max, block) => Math.max(max, block.lane + 1), 1))
-  const topPad = $derived(dayWidth >= DAY_ZOOM ? 22 : 8)
-  const bodyHeight = $derived(Math.max(220, depth * LANE + topPad + 8))
-  const nowX = $derived(
-    msPerPx && now >= windowStart && now < windowEnd ? timeToX(now, windowStart, msPerPx) : null,
-  )
-  const draft = $derived.by(() => {
-    if (!drag || drag.mode !== 'create' || !drag.moved || !msPerPx) return null
-    const left = timeToX(Math.max(drag.start, windowStart), windowStart, msPerPx)
-    const right = Math.min(timeToX(drag.end, windowStart, msPerPx), totalWidth)
-    return { left, width: Math.max(2, right - left) }
-  })
-  const gridlines = $derived.by(() => {
-    if (!msPerPx || dayWidth < DAY_ZOOM) return []
-    const out: { left: number; hour: string }[] = []
-    for (const day of days) {
-      for (let hour = 1; hour < 24; hour++) {
-        const at = wallTimeToInstant(tz, `${day.date}T${String(hour).padStart(2, '0')}:00`)
-        if (at < day.start || at >= day.end) continue
-        out.push({ left: timeToX(at, windowStart, msPerPx), hour: String(hour) })
-      }
+  const addX = $derived(AXIS_W + lanes.length * LANE_W)
+  const contentWidth = $derived(addX + ADD_W)
+  const nowY = $derived(now >= dayStart && now < dayEnd ? yOf(now) : null)
+  const hours = $derived.by(() => {
+    const out: { label: string; y: number }[] = []
+    for (let hour = 0; hour < 24; hour++) {
+      const at = wallTimeToInstant(tz, `${day}T${String(hour).padStart(2, '0')}:00`)
+      if (at < dayStart || at >= dayEnd) continue
+      out.push({ label: `${String(hour).padStart(2, '0')}:00`, y: yOf(at) })
     }
     return out
   })
+  const draft = $derived.by(() => {
+    const active = drag
+    if (!active || active.mode !== 'create' || !active.moved) return null
+    const top = yOf(Math.max(active.start, dayStart))
+    const bottom = Math.min(yOf(active.end), bodyHeight)
+    const index = lanes.findIndex((lane) => lane.id === active.projectID)
+    return {
+      x: AXIS_W + index * LANE_W,
+      top,
+      height: Math.max(2, bottom - top),
+    }
+  })
+  const pickable = $derived(
+    choices
+      .filter((project) => !lanes.some((lane) => lane.id === project.id))
+      .filter((project) => project.name.toLowerCase().includes(pickerFilter.trim().toLowerCase())),
+  )
+
+  let panelMode = $state<'new' | 'edit' | null>(null)
+  let panelEntry = $state<Entry | null>(null)
+  let panelProject = $state('')
+  let panelStart = $state('')
+  let panelEnd = $state('')
+  let panelNote = $state('')
+  let panelFirst = $state<HTMLSelectElement>()
+  const panelRunning = $derived(panelEntry !== null && panelEntry.end_at === null)
 
   let requestID = 0
 
-  // load fetches the window with two buffer days on each side, so a block that
-  // starts just outside still has its real start and lane. refresh keeps a
-  // mutation's error on screen; a window change clears it.
   async function load({ keepError = false }: { keepError?: boolean } = {}) {
     if (!userID) return
     const id = ++requestID
-    const from = addDays(localDate(tz, windowStart), -2)
-    const to = addDays(localDate(tz, windowStart), windowDays + 2)
+    const from = addDays(day, -1)
+    const to = addDays(day, 2)
     const { data, error: problem, response } = await api.GET('/api/v1/entries', {
       params: { query: { user_id: userID, from, to } },
     })
@@ -213,17 +213,22 @@
       return
     }
     projects = data ?? []
-    const remembered = Number(localStorage.getItem(STICKY_PROJECT) ?? 0)
-    const live = projects.filter((project) => !project.archived_at)
-    if (!live.some((project) => String(project.id) === projectID)) {
-      const picked = live.some((project) => project.id === remembered) ? remembered : live[0]?.id
-      projectID = picked === undefined ? '' : String(picked)
-      rememberProject()
+    const remembered = laneIDs.filter((id) => projects.some((project) => project.id === id))
+    laneIDs = remembered
+    lastProject = remembered[0] ?? projects.find((project) => !project.archived_at)?.id ?? 0
+  }
+
+  function readLanes(): number[] {
+    try {
+      const stored = JSON.parse(localStorage.getItem(LANES_KEY) ?? '[]')
+      return Array.isArray(stored) ? stored.map(Number).filter((id) => Number.isFinite(id) && id > 0) : []
+    } catch {
+      return []
     }
   }
 
-  function rememberProject() {
-    if (projectID) localStorage.setItem(STICKY_PROJECT, projectID)
+  function rememberLanes() {
+    localStorage.setItem(LANES_KEY, JSON.stringify(laneIDs))
   }
 
   async function refresh() {
@@ -232,9 +237,8 @@
   }
 
   $effect(() => {
-    if (!hasWidth) return
-    windowStart
-    windowDays
+    day
+    if (!userID) return
     void load()
   })
 
@@ -244,106 +248,41 @@
   })
 
   onMount(() => {
-    const el = scrollEl
-    if (!el) return
-
-    const fit = () => {
-      viewWidth = el.clientWidth
-      if (viewWidth === 0) return
-      const min = viewWidth / 7
-      dayWidth = dayWidth === 0 ? min : Math.min(Math.max(dayWidth, min), viewWidth)
-    }
-    fit()
-    const observer = new ResizeObserver(fit)
-    observer.observe(el)
-
+    laneIDs = readLanes()
+    lastProject = laneIDs[0] ?? 0
     const timer = setInterval(() => (now = Date.now()), 30_000)
-    void tick().then(() => scrollTo(weekStart))
     void loadProjects()
-
-    // Wheel is zoom only; shift+wheel keeps the browser's horizontal scroll.
-    function onWheel(event: WheelEvent) {
-      if (event.shiftKey || !event.deltaY) return
-      event.preventDefault()
-      void zoom(event.clientX, event.deltaY)
-    }
-    el.addEventListener('wheel', onWheel, { passive: false })
-
-    return () => {
-      observer.disconnect()
-      clearInterval(timer)
-      el.removeEventListener('wheel', onWheel)
-    }
+    void tick().then(scrollToHour)
+    return () => clearInterval(timer)
   })
 
-  async function zoom(clientX: number, deltaY: number) {
+  // Open about an hour above "now" on today, else at the start of the workday.
+  function scrollToHour() {
     const el = scrollEl
-    if (!el || !msPerPx || viewWidth === 0) return
-    const cursor = Math.min(Math.max(clientX - el.getBoundingClientRect().left, 0), viewWidth)
-    const at = xToTime(el.scrollLeft + cursor, windowStart, msPerPx)
-    const next = Math.min(
-      Math.max(dayWidth * Math.exp(-deltaY * 0.0015), viewWidth / 7),
-      viewWidth,
-    )
-    if (Math.abs(next - dayWidth) < 0.5) return
-    dayWidth = next
-    await tick()
-    el.scrollLeft = timeToX(at, windowStart, DAY / dayWidth) - cursor
+    if (!el) return
+    const hour = today === day ? Math.max(0, zonedParts(now, tz).hour - 1) : 8
+    el.scrollTop = Math.max(0, HEAD_H + hour * HOUR_H - 8)
   }
 
-  function scrollTo(ms: number) {
-    const el = scrollEl
-    if (!el || !msPerPx) return
-    el.scrollLeft = Math.max(0, timeToX(ms, windowStart, msPerPx) - 8)
+  function shiftDay(days: number) {
+    day = addDays(day, days)
+    void tick().then(scrollToHour)
   }
 
-  async function goToday() {
-    const start = startOfDay(tz, Date.now())
-    if (start < windowStart || start >= windowEnd) {
-      windowStart = defaultStart()
-      windowDays = DEFAULT_DAYS
-      await tick()
-    }
-    scrollTo(start)
+  function goToday() {
+    if (day !== today) day = today
+    void tick().then(scrollToHour)
   }
 
-  function shiftWindow(days: number) {
-    windowStart = wallTimeToInstant(tz, `${addDays(localDate(tz, windowStart), days)}T00:00`)
-  }
-
-  let extending = false
-
-  // Reaching within one day of an edge grows the strip by a week on that side
-  // and shifts scrollLeft by the width the new days added, so nothing jumps.
-  async function onScroll() {
-    const el = scrollEl
-    if (!el || extending || !msPerPx) return
-    if (el.scrollLeft < dayWidth) {
-      extending = true
-      const oldStart = windowStart
-      windowStart = wallTimeToInstant(tz, `${addDays(localDate(tz, windowStart), -7)}T00:00`)
-      windowDays += 7
-      const added = timeToX(oldStart, windowStart, msPerPx)
-      await tick()
-      el.scrollLeft += added
-      extending = false
-    } else if (el.scrollLeft + el.clientWidth > totalWidth - dayWidth) {
-      extending = true
-      windowDays += 7
-      await tick()
-      extending = false
-    }
-  }
-
-  function localX(event: PointerEvent): number {
-    const el = scrollEl
+  function yAt(event: PointerEvent): number {
+    const el = bodyEl
     if (!el) return 0
-    return event.clientX - el.getBoundingClientRect().left + el.scrollLeft - el.clientLeft
+    return event.clientY - el.getBoundingClientRect().top
   }
 
   function timeAt(event: PointerEvent): number {
-    const at = xToTime(localX(event), windowStart, msPerPx)
-    return Math.min(Math.max(at, windowStart), windowEnd - MIN)
+    const at = dayStart + yAt(event) * msPerPx
+    return Math.min(Math.max(at, dayStart), dayEnd - MIN)
   }
 
   function capture(event: PointerEvent) {
@@ -351,52 +290,54 @@
   }
 
   function downCanvas(event: PointerEvent) {
-    const el = scrollEl
-    if (event.button !== 0 || !msPerPx || !el) return
-    // A press in a native scrollbar lane belongs to the scrollbar, not a draft.
-    const rect = el.getBoundingClientRect()
-    if (event.clientX - rect.left >= el.clientWidth || event.clientY - rect.top >= el.clientHeight) return
-    if ((event.target as HTMLElement).closest('.strip-header')) return
+    if (event.button !== 0 || !msPerPx || !bodyEl) return
+    if ((event.target as HTMLElement).closest('.lanes-head')) return
+    const x = event.clientX - bodyEl.getBoundingClientRect().left
+    const lane = lanes[Math.floor((x - AXIS_W) / LANE_W)]
+    if (x < AXIS_W || !lane) return
+    const projectID = lane.id
     capture(event)
     const anchor = snap(timeAt(event), event.altKey ? FINE_SNAP : SNAP)
     drag = {
       mode: 'create',
+      projectID,
       anchor,
       start: anchor,
       end: anchor,
-      originX: event.clientX,
+      originY: event.clientY,
       moved: false,
       pointerID: event.pointerId,
     }
+    lastProject = projectID
   }
 
   function downBlock(event: PointerEvent, entry: Entry, mode: 'move' | 'resize-start' | 'resize-end') {
     if (event.button !== 0 || !msPerPx) return
     event.stopPropagation()
     capture(event)
-    const start = Date.parse(entry.start_at)
-    const end = entry.end_at ? Date.parse(entry.end_at) : now
+    const span = spanOf(entry)
     drag = {
       mode,
       id: entry.id,
-      origStart: start,
-      origEnd: end,
-      start,
-      end,
-      originX: event.clientX,
+      origStart: span.start,
+      origEnd: span.end,
+      start: span.start,
+      end: span.end,
+      originY: event.clientY,
       moved: false,
       // A running entry is retimed by stopping it; dragging would silently stop
       // the timer, so it stays click-only.
       running: entry.end_at === null,
       pointerID: event.pointerId,
     }
+    lastProject = entry.project_id
     selectedID = entry.id
   }
 
   function pointerMove(event: PointerEvent) {
     if (!drag || !msPerPx) return
     if (drag.mode !== 'create' && drag.running) return
-    const shift = event.clientX - drag.originX
+    const shift = event.clientY - drag.originY
     if (Math.abs(shift) > 3) drag.moved = true
     const delta = shift * msPerPx
     const step = event.altKey ? FINE_SNAP : SNAP
@@ -432,7 +373,7 @@
     drag = null
 
     if (!finished.moved) {
-      if (finished.mode === 'create') openNew(finished.anchor, finished.anchor + HOUR)
+      if (finished.mode === 'create') openNew(finished.anchor, finished.anchor + HOUR, finished.projectID)
       else openEditById(finished.id)
       return
     }
@@ -440,19 +381,13 @@
     error = ''
     if (finished.mode === 'create') {
       if (finished.end - finished.start < MIN) {
-        openNew(finished.anchor, finished.anchor + HOUR)
-        return
-      }
-      const project = Number(projectID)
-      if (!project) {
-        error = 'Choose a project before drawing time.'
-        openNew(finished.start, finished.end)
+        openNew(finished.anchor, finished.anchor + HOUR, finished.projectID)
         return
       }
       pending = true
       const { data, error: problem, response } = await api.POST('/api/v1/entries', {
         body: {
-          project_id: project,
+          project_id: finished.projectID,
           start_at: new Date(finished.start).toISOString(),
           end_at: new Date(finished.end).toISOString(),
           note: '',
@@ -488,11 +423,11 @@
     drag = null
   }
 
-  function openNew(startMs: number, endMs: number) {
+  function openNew(startMs: number, endMs: number, projectID: number) {
     const range = clampRange(snap(startMs, SNAP), snap(endMs, SNAP), now)
     panelMode = 'new'
     panelEntry = null
-    panelProject = projectID
+    panelProject = String(projectID)
     panelStart = instantToWallTime(tz, range.start)
     panelEnd = instantToWallTime(tz, range.end)
     panelNote = ''
@@ -607,13 +542,12 @@
     void deleteEntry(selectedID)
   }
 
-  async function startTimer() {
-    const project = Number(projectID)
-    if (!project || pending) return
+  async function startTimer(projectID: number) {
+    if (!projectID || pending) return
     error = ''
     pending = true
     const { data, error: problem, response } = await api.POST('/api/v1/timer/start', {
-      body: { project_id: project },
+      body: { project_id: projectID },
     })
     pending = false
     if (problem) error = problemMessage(problem, response)
@@ -635,10 +569,31 @@
     await refresh()
   }
 
-  function toggleTimer() {
+  function toggleTimer(projectID: number) {
     if (pending) return
-    if (running) void stopTimer()
-    else void startTimer()
+    if (running) {
+      if (running.project_id === projectID) void stopTimer()
+      return
+    }
+    void startTimer(projectID)
+  }
+
+  function openPicker() {
+    pickerFilter = ''
+    pickerEl?.showModal()
+  }
+
+  function addLane(projectID: number) {
+    if (!laneIDs.includes(projectID)) {
+      laneIDs = [...laneIDs, projectID]
+      rememberLanes()
+    }
+    lastProject = projectID
+    pickerEl?.close()
+    // The new lane is the last one; bring it into view.
+    void tick().then(() => {
+      if (scrollEl) scrollEl.scrollLeft = scrollEl.scrollWidth
+    })
   }
 
   async function deletePanelEntry() {
@@ -660,16 +615,18 @@
     }
     const target = event.target
     // Let native Space activation work on buttons and links.
-    if (target instanceof HTMLElement && target.closest('input, select, textarea, button, a')) return
+    if (target instanceof HTMLElement && target.closest('input, select, textarea, button, a, dialog')) return
     if (panelMode !== null) return
 
     if (event.key === ' ') {
       event.preventDefault()
-      toggleTimer()
+      const project = running?.project_id ?? lastProject ?? lanes[0]?.id ?? 0
+      if (project) toggleTimer(project)
     } else if (event.key === 'n' || event.key === 'N') {
       event.preventDefault()
       const end = snap(now, SNAP)
-      openNew(end - HOUR, end)
+      const project = lastProject || lanes[0]?.id
+      if (project) openNew(end - HOUR, end, project)
     } else if (event.key === 'Delete' || event.key === 'Backspace') {
       if (selectedID === null) return
       event.preventDefault()
@@ -688,94 +645,75 @@
   {/if}
 
   <div class="toolbar">
-    <div class="field">
-      <label for="timeline-project">Project</label>
-      <select id="timeline-project" bind:value={projectID} onchange={rememberProject} disabled={pending}>
-        {#if choices.length === 0}
-          <option value="">No projects</option>
-        {/if}
-        {#each choices as project (project.id)}
-          <option value={String(project.id)}>{project.name}</option>
-        {/each}
-      </select>
-    </div>
-    <button
-      class={running ? 'danger' : 'primary'}
-      type="button"
-      onclick={toggleTimer}
-      disabled={pending || (!running && !projectID)}
-    >
-      {running ? 'Stop' : 'Start'}
-    </button>
-    {#if running}
-      <span class="hint">
-        {nameOf(running)} · {formatDuration((now - Date.parse(running.start_at)) / 1000)}
-      </span>
-    {/if}
     <div class="timeline-nav">
-      <button class="ghost" type="button" aria-label="Previous week" onclick={() => shiftWindow(-7)}>
-        ◀
-      </button>
+      <button class="ghost" type="button" aria-label="Previous day" onclick={() => shiftDay(-1)}>◀</button>
       <button class="ghost" type="button" onclick={goToday}>Today</button>
-      <button class="ghost" type="button" aria-label="Next week" onclick={() => shiftWindow(7)}>▶</button>
+      <button class="ghost" type="button" aria-label="Next day" onclick={() => shiftDay(1)}>▶</button>
     </div>
+    <span class="day-title">{dayTitle}</span>
     <p class="hint">
-      Drag to log · Alt for 1-minute steps · space start/stop · n new · Delete remove · Esc cancel
+      Drag on a lane to log · Alt for 1-minute steps · space start/stop · n new · Delete remove · Esc cancel
     </p>
   </div>
 
   {#if loading}
     <p class="hint">Loading timeline…</p>
-  {:else if blocks.length === 0}
-    <p class="hint">Drag on the timeline to log time, or press n.</p>
   {/if}
 
   <div class="timeline-layout" class:with-panel={panelMode !== null}>
     <div
-      class="timeline-scroll"
+      class="lanes-scroll"
       role="group"
       aria-label="Timeline"
       bind:this={scrollEl}
-      onscroll={onScroll}
       onpointerdown={downCanvas}
       onpointermove={pointerMove}
       onpointerup={pointerUp}
       onpointercancel={cancelDrag}
     >
-      {#if msPerPx}
-        <div class="strip" style:width={`${totalWidth}px`}>
-          <div class="strip-header">
-            {#each days as day (day.date)}
-              <div
-                class="day-head"
-                class:today={day.date === today}
-                style:left={`${day.left}px`}
-                style:width={`${day.width}px`}
+      <div class="lanes" style:width={`${contentWidth}px`}>
+        <div class="lanes-head">
+          {#each lanes as lane (lane.id)}
+            <div class="lane-head" style:left={`${lane.x + 6}px`} style:width={`${LANE_W - 12}px`}>
+              <span class="lane-dot" style:background={lane.color} aria-hidden="true"></span>
+              <span class="lane-name" title={lane.name}>{lane.name}</span>
+              <span class="lane-total">{lane.total}</span>
+              <button
+                class="lane-timer"
+                class:running={running?.project_id === lane.id}
+                type="button"
+                aria-label={running?.project_id === lane.id ? `Stop timer on ${lane.name}` : `Start timer on ${lane.name}`}
+                disabled={running !== null && running.project_id !== lane.id}
+                onclick={() => toggleTimer(lane.id)}
               >
-                <span class="weekday">{weekday.format(new Date(`${day.date}T00:00:00Z`))}</span>
-                <span class="daynum">{Number(day.date.slice(8, 10))}</span>
-                <span class="month">{month.format(new Date(`${day.date}T00:00:00Z`))}</span>
-              </div>
-            {/each}
-          </div>
+                {running?.project_id === lane.id ? '■' : '▶'}
+              </button>
+            </div>
+          {/each}
+          <button
+            class="add-lane-head"
+            type="button"
+            style:left={`${addX + 6}px`}
+            aria-label="Add project lane"
+            onclick={openPicker}
+          >
+            +
+          </button>
+        </div>
 
-          <div class="strip-body" style:height={`${bodyHeight}px`}>
-            {#each days as day (day.date)}
-              <div
-                class="day-band"
-                class:today={day.date === today}
-                style:left={`${day.left}px`}
-                style:width={`${day.width}px`}
-              ></div>
-            {/each}
+        <div class="lanes-body" bind:this={bodyEl} style:height={`${bodyHeight}px`}>
+          {#each hours as hour (hour.label)}
+            <div class="hour-line" style:top={`${hour.y}px`}>
+              <span>{hour.label}</span>
+            </div>
+          {/each}
 
-            {#each gridlines as line, index (index)}
-              <div class="hour-line" style:left={`${line.left}px`}>
-                <span>{line.hour}</span>
-              </div>
-            {/each}
+          {#each lanes as lane (lane.id)}
+            <div class="lane" style:left={`${lane.x}px`} style:width={`${LANE_W}px`}></div>
+          {/each}
 
-            {#each blocks as block (block.entry.id)}
+          {#each lanes as lane (lane.id)}
+            {#each lane.blocks as block (block.entry.id)}
               <div
                 class="entry-block"
                 class:selected={selectedID === block.entry.id}
@@ -784,10 +722,11 @@
                 tabindex="0"
                 aria-label={describe(block.entry, block.start, block.end)}
                 title={describe(block.entry, block.start, block.end)}
-                style:left={`${block.left}px`}
-                style:width={`${block.width}px`}
-                style:top={`${block.lane * LANE + topPad}px`}
-                style:background={colorOf(block.entry)}
+                style:left={`${lane.x + 6}px`}
+                style:width={`${LANE_W - 12}px`}
+                style:top={`${block.top}px`}
+                style:height={`${block.height}px`}
+                style:background={lane.color}
                 onpointerdown={(event) => downBlock(event, block.entry, 'move')}
                 onkeydown={(event) => {
                   if (event.key === 'Enter') {
@@ -797,40 +736,50 @@
                 }}
               >
                 <span
-                  class="resize left"
+                  class="resize top"
                   aria-hidden="true"
                   onpointerdown={(event) => downBlock(event, block.entry, 'resize-start')}
                 ></span>
-                {#if block.width > 48}
-                  <span class="block-text">
-                    {nameOf(block.entry)}{block.entry.note ? ` · ${block.entry.note}` : ''}
+                {#if block.height > 26}
+                  {#if block.entry.note}
+                    <span class="block-text">{block.entry.note}</span>
+                  {/if}
+                  <span class="block-dur">
+                    {formatDuration((block.end - block.start) / 1000)}
                   </span>
                 {/if}
                 <span
-                  class="resize right"
+                  class="resize bottom"
                   aria-hidden="true"
                   onpointerdown={(event) => downBlock(event, block.entry, 'resize-end')}
                 ></span>
               </div>
             {/each}
+          {/each}
 
-            {#if draft}
-              <div
-                class="draft"
-                style:left={`${draft.left}px`}
-                style:width={`${draft.width}px`}
-                style:top={`${topPad}px`}
-              ></div>
-            {/if}
+          {#if draft}
+            <div
+              class="draft"
+              style:left={`${draft.x + 6}px`}
+              style:width={`${LANE_W - 12}px`}
+              style:top={`${draft.top}px`}
+              style:height={`${draft.height}px`}
+            ></div>
+          {/if}
 
-            {#if nowX !== null}
-              <div class="now-line" style:left={`${nowX}px`}>
-                <span>{clock.format(now)}</span>
-              </div>
-            {/if}
-          </div>
+          <div class="add-lane" style:left={`${addX}px`} style:width={`${ADD_W}px`} aria-hidden="true"></div>
+
+          {#if lanes.length === 0 && !loading}
+            <p class="lanes-empty">Hit + to add a project and start logging.</p>
+          {/if}
+
+          {#if nowY !== null}
+            <div class="now-line" style:top={`${nowY}px`}>
+              <span>{clock.format(now)}</span>
+            </div>
+          {/if}
         </div>
-      {/if}
+      </div>
     </div>
 
     {#if panelMode !== null}
@@ -896,3 +845,30 @@
     {/if}
   </div>
 </div>
+
+<dialog class="project-picker" bind:this={pickerEl} aria-label="Add project">
+  <h2>Add project</h2>
+  <input
+    type="search"
+    placeholder="Search projects…"
+    aria-label="Search projects"
+    bind:value={pickerFilter}
+  />
+  {#if pickable.length === 0}
+    <p class="hint">No projects left to add.</p>
+  {:else}
+    <ul>
+      {#each pickable as project (project.id)}
+        <li>
+          <button type="button" onclick={() => addLane(project.id)}>
+            <span class="lane-dot" style:background={project.color || '#64748b'} aria-hidden="true"></span>
+            {project.name}
+          </button>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+  <div class="row-actions">
+    <button class="ghost" type="button" onclick={() => pickerEl?.close()}>Cancel</button>
+  </div>
+</dialog>
