@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -40,7 +41,7 @@ func (s *Server) reportRoutes(api huma.API) {
 
 type reportInput struct {
 	From      string `query:"from" doc:"Inclusive start date, YYYY-MM-DD. Defaults to the start of the caller's ISO week."`
-	To        string `query:"to" doc:"Exclusive end date, YYYY-MM-DD. Defaults to a week after from."`
+	To        string `query:"to" doc:"Exclusive end date, YYYY-MM-DD. Required with from."`
 	By        string `query:"by" enum:"week,day,none" default:"week" doc:"Bucket: ISO week, subject-local day, or the whole range."`
 	TeamID    uint   `query:"team_id" doc:"Only entries on this team's projects."`
 	UserID    uint   `query:"user_id" doc:"Only this user's entries, within what the caller may read."`
@@ -145,12 +146,41 @@ func (s *Server) reportSegments(ctx context.Context, in *reportInput) ([]report.
 		return nil, internal(err)
 	}
 
-	segments, err := report.Split(report.Input{
-		Entries: entries, Users: users, Projects: projects, Teams: teams,
-		Now: s.Clock.Now(), // a running entry counts up to now; only deleted ones are excluded
-	}, rng.From, rng.To)
+	// A running entry counts up to now; only deleted ones are excluded.
+	segments, err := report.Split(toReportInput(entries, users, projects, teams, s.Clock.Now()), rng.From, rng.To)
 	if err != nil {
 		return nil, internal(err)
 	}
 	return segments, nil
+}
+
+// toReportInput narrows the loaded store rows to the fields a report reads.
+func toReportInput(entries []store.Entry, users []store.User, projects []store.Project, teams []store.Team, now time.Time) report.Input {
+	in := report.Input{
+		Entries:  make([]report.Entry, 0, len(entries)),
+		Users:    make([]report.User, 0, len(users)),
+		Projects: make([]report.Project, 0, len(projects)),
+		Teams:    make([]report.Team, 0, len(teams)),
+		Now:      now,
+	}
+	for _, e := range entries {
+		in.Entries = append(in.Entries, report.Entry{
+			ID: e.ID, UserID: e.UserID, ProjectID: e.ProjectID,
+			StartAt: e.StartAt, EndAt: e.EndAt, Note: e.Note, DeletedAt: e.DeletedAt,
+		})
+	}
+	for _, u := range users {
+		in.Users = append(in.Users, report.User{
+			ID: u.ID, Name: u.Name, Email: u.Email, Timezone: u.Timezone,
+		})
+	}
+	for _, p := range projects {
+		in.Projects = append(in.Projects, report.Project{
+			ID: p.ID, TeamID: p.TeamID, Name: p.Name, ArchivedAt: p.ArchivedAt,
+		})
+	}
+	for _, t := range teams {
+		in.Teams = append(in.Teams, report.Team{ID: t.ID, Name: t.Name})
+	}
+	return in
 }

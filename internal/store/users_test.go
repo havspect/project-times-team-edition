@@ -43,7 +43,7 @@ func TestSaveUserUpdatesAdminFields(t *testing.T) {
 	u.Name = "Ada Lovelace"
 	u.Timezone = "Europe/Berlin"
 	u.IsAdmin = true
-	if err := s.SaveUser(u); err != nil {
+	if err := s.SaveUser(u, at(9)); err != nil {
 		t.Fatalf("SaveUser: %v", err)
 	}
 
@@ -55,7 +55,7 @@ func TestSaveUserUpdatesAdminFields(t *testing.T) {
 		t.Fatalf("saved user = %+v, want the new fields", got)
 	}
 
-	if err := s.SaveUser(&User{ID: 999}); !errors.Is(err, ErrNotFound) {
+	if err := s.SaveUser(&User{ID: 999}, at(9)); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("SaveUser(unknown) = %v, want ErrNotFound", err)
 	}
 }
@@ -75,7 +75,7 @@ func TestSaveUserKeepsLastAdmin(t *testing.T) {
 				t.Fatalf("by id: %v", err)
 			}
 			change(u)
-			if err := s.SaveUser(u); !errors.Is(err, ErrLastAdmin) {
+			if err := s.SaveUser(u, at(9)); !errors.Is(err, ErrLastAdmin) {
 				t.Fatalf("SaveUser = %v, want ErrLastAdmin", err)
 			}
 			left, err := s.UserByID(admin.ID)
@@ -95,7 +95,7 @@ func TestSaveUserKeepsLastAdmin(t *testing.T) {
 		t.Fatalf("by id: %v", err)
 	}
 	u.IsAdmin = false
-	if err := s.SaveUser(u); err != nil {
+	if err := s.SaveUser(u, at(9)); err != nil {
 		t.Fatalf("demote with a second admin: %v", err)
 	}
 
@@ -105,13 +105,13 @@ func TestSaveUserKeepsLastAdmin(t *testing.T) {
 		t.Fatalf("by id: %v", err)
 	}
 	last.Active = false
-	if err := s.SaveUser(last); err != nil {
+	if err := s.SaveUser(last, at(9)); err != nil {
 		t.Fatalf("deactivate a non-admin: %v", err)
 	}
 
 	// Deactivating a plain member is always allowed.
 	member.Active = false
-	if err := s.SaveUser(member); err != nil {
+	if err := s.SaveUser(member, at(9)); err != nil {
 		t.Fatalf("deactivate a member: %v", err)
 	}
 }

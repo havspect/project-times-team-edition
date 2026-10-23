@@ -45,6 +45,8 @@ func fail(err error) *huma.ErrorModel {
 		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "unknown user")
 	case errors.Is(err, store.ErrEntryRunning):
 		return problem(http.StatusConflict, urnTimerAlreadyRunning, "the user already has a running entry")
+	case errors.Is(err, store.ErrProjectHasEntries):
+		return problem(http.StatusUnprocessableEntity, urnProjectHasEntries, "a project with entries cannot change team")
 	}
 	return internal(err)
 }

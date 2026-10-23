@@ -163,15 +163,8 @@ func (s *Server) updateUser(ctx context.Context, in *updateUserInput) (*userOutp
 		u.Active = *in.Body.Active
 	}
 
-	if err := s.Store.SaveUser(u); err != nil {
+	if err := s.Store.SaveUser(u, s.Clock.Now()); err != nil {
 		return nil, fail(err)
-	}
-	// Deactivating also stops the running entry, at that instant, so a user who
-	// can no longer log in is not left with a timer nobody can reach.
-	if in.Body.Active != nil && !*in.Body.Active {
-		if err := s.Store.DeactivateUser(u.ID, s.Clock.Now()); err != nil {
-			return nil, fail(err)
-		}
 	}
 	return &userOutput{Body: userOf(u)}, nil
 }

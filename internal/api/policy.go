@@ -54,3 +54,16 @@ func (s *Server) requireTeamManager(ctx context.Context, teamID uint) (*store.Us
 	}
 	return u, nil
 }
+
+// entryScope is what the caller may read: everything for an admin, own entries
+// plus the projects they lead for a lead, own entries for everyone else.
+func (s *Server) entryScope(u *store.User) (store.Scope, error) {
+	if u.IsAdmin {
+		return store.Scope{All: true}, nil
+	}
+	ids, err := s.Store.ProjectIDsLedBy(u.ID)
+	if err != nil {
+		return store.Scope{}, err
+	}
+	return store.Scope{UserID: u.ID, ProjectIDs: ids}, nil
+}

@@ -77,19 +77,6 @@ func (s *Server) entryRoutes(api huma.API) {
 	}, s.restoreEntry)
 }
 
-// entryScope is what the caller may read: everything for an admin, own entries
-// plus the projects they lead for a lead, own entries for everyone else.
-func (s *Server) entryScope(u *store.User) (store.Scope, error) {
-	if u.IsAdmin {
-		return store.Scope{All: true}, nil
-	}
-	ids, err := s.Store.ProjectIDsLedBy(u.ID)
-	if err != nil {
-		return store.Scope{}, err
-	}
-	return store.Scope{UserID: u.ID, ProjectIDs: ids}, nil
-}
-
 // dateRange is a query range: from inclusive, to exclusive, both plain dates.
 type dateRange struct{ From, To time.Time }
 
@@ -190,19 +177,19 @@ func (s *Server) loadEntries(scope store.Scope, rng dateRange, filter entryFilte
 	return filter.matching(entries, byID), byID, nil
 }
 
-// requireLoggableProject resolves the project a new or moved entry points at:
+// requireLoggableProject checks the project a new or moved entry points at:
 // unknown is a 422, and an archived project takes no new entries.
-func (s *Server) requireLoggableProject(id uint) (*store.Project, error) {
+func (s *Server) requireLoggableProject(id uint) error {
 	p, err := s.Store.ProjectByID(id)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
-		return nil, problem(http.StatusUnprocessableEntity, urnInvalidInput, "unknown project")
+		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "unknown project")
 	case err != nil:
-		return nil, internal(err)
+		return internal(err)
 	case p.ArchivedAt != nil:
-		return nil, problem(http.StatusUnprocessableEntity, urnInvalidInput, "project is archived")
+		return problem(http.StatusUnprocessableEntity, urnInvalidInput, "project is archived")
 	}
-	return p, nil
+	return nil
 }
 
 // entryRuleProblem turns an entry-rule error into the reply the spec names.
@@ -219,7 +206,7 @@ func entryRuleProblem(err error) *huma.ErrorModel {
 
 type entryListInput struct {
 	From      string `query:"from" doc:"Inclusive start date, YYYY-MM-DD. Defaults to the start of the caller's ISO week."`
-	To        string `query:"to" doc:"Exclusive end date, YYYY-MM-DD. Defaults to a week after from."`
+	To        string `query:"to" doc:"Exclusive end date, YYYY-MM-DD. Required with from."`
 	UserID    uint   `query:"user_id" doc:"Only this user's entries, within what the caller may read."`
 	ProjectID uint   `query:"project_id" doc:"Only this project's entries."`
 }
@@ -266,7 +253,7 @@ func (s *Server) createEntry(ctx context.Context, in *entryCreateInput) (*entryO
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.requireLoggableProject(in.Body.ProjectID); err != nil {
+	if err := s.requireLoggableProject(in.Body.ProjectID); err != nil {
 		return nil, err
 	}
 	now := s.Clock.Now()
@@ -309,14 +296,17 @@ func (s *Server) patchEntry(ctx context.Context, in *entryPatchInput) (*entryOut
 	if e.UserID != u.ID {
 		return nil, problem(http.StatusForbidden, urnForbidden, "you can only edit your own entries")
 	}
+	changes := map[string]any{}
 	if in.Body.ProjectID != nil && *in.Body.ProjectID != e.ProjectID {
-		if _, err := s.requireLoggableProject(*in.Body.ProjectID); err != nil {
+		if err := s.requireLoggableProject(*in.Body.ProjectID); err != nil {
 			return nil, err
 		}
 		e.ProjectID = *in.Body.ProjectID
+		changes["project_id"] = e.ProjectID
 	}
 	if in.Body.Note != nil {
 		e.Note = *in.Body.Note
+		changes["note"] = e.Note
 	}
 
 	start := e.StartAt
@@ -336,15 +326,17 @@ func (s *Server) patchEntry(ctx context.Context, in *entryPatchInput) (*entryOut
 			return nil, problem(http.StatusUnprocessableEntity, urnInvalidInput, "a running entry needs an end_at to be retimed")
 		}
 	}
-	if !end.IsZero() {
+	if !end.IsZero() && (in.Body.StartAt != nil || in.Body.EndAt != nil) {
 		if err := entry.Validate(start, end, s.Clock.Now()); err != nil {
 			return nil, entryRuleProblem(err)
 		}
 		e.StartAt, e.EndAt = start, &end
+		changes["start_at"], changes["end_at"] = start, end
 	}
-	e.UpdatedAt = s.Clock.Now()
-	if err := s.Store.UpdateEntry(e); err != nil {
-		return nil, internal(err)
+	if len(changes) > 0 {
+		if err := s.Store.UpdateEntry(e.ID, s.Clock.Now(), changes); err != nil {
+			return nil, internal(err)
+		}
 	}
 	return &entryOutput{Body: entryResponseOf(e)}, nil
 }

@@ -17,8 +17,11 @@ func (s *Store) ListUsers() ([]User, error) {
 	return users, err
 }
 
-// SaveUser writes the admin-editable fields of u and refuses to leave no active admin.
-func (s *Store) SaveUser(u *User) error {
+// SaveUser writes the admin-editable fields of u and refuses to leave no active
+// admin. Deactivating also stops the running entry at at, in the same
+// transaction, so a user who can no longer log in is not left with a timer
+// nobody can reach.
+func (s *Store) SaveUser(u *User, at time.Time) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		var current User
 		if err := tx.First(&current, u.ID).Error; err != nil {
@@ -33,6 +36,13 @@ func (s *Store) SaveUser(u *User) error {
 			}
 			if admins <= 1 {
 				return ErrLastAdmin
+			}
+		}
+		if current.Active && !u.Active {
+			if err := tx.Model(&Entry{}).
+				Where("user_id = ? AND end_at IS NULL AND deleted_at IS NULL", u.ID).
+				UpdateColumns(map[string]any{"end_at": at, "note": DeactivationNote, "updated_at": at}).Error; err != nil {
+				return err
 			}
 		}
 		return tx.Model(&User{}).Where("id = ?", u.ID).Updates(map[string]any{

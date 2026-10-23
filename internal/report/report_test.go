@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/havspect/project-times/internal/store"
 )
 
 func date(y int, m time.Month, d int) time.Time {
@@ -25,12 +23,12 @@ func loadLoc(t *testing.T, name string) *time.Location {
 
 // fixture builds a one-user, one-project, one-team Input so each test only
 // supplies entries and a timezone.
-func fixture(tz string, entries ...store.Entry) Input {
+func fixture(tz string, entries ...Entry) Input {
 	return Input{
 		Entries:  entries,
-		Users:    []store.User{{ID: 1, Name: "Ada Lovelace", Email: "ada@example.com", Timezone: tz}},
-		Projects: []store.Project{{ID: 1, TeamID: 1, Name: "Timeline"}},
-		Teams:    []store.Team{{ID: 1, Name: "Platform"}},
+		Users:    []User{{ID: 1, Name: "Ada Lovelace", Email: "ada@example.com", Timezone: tz}},
+		Projects: []Project{{ID: 1, TeamID: 1, Name: "Timeline"}},
+		Teams:    []Team{{ID: 1, Name: "Platform"}},
 	}
 }
 
@@ -57,7 +55,7 @@ func TestSplitCrossesLocalMidnight(t *testing.T) {
 	tokyo := loadLoc(t, "Asia/Tokyo")
 	start := time.Date(2026, 10, 19, 18, 0, 0, 0, tokyo)
 	end := time.Date(2026, 10, 20, 6, 0, 0, 0, tokyo)
-	in := fixture("Asia/Tokyo", store.Entry{
+	in := fixture("Asia/Tokyo", Entry{
 		ID: 1, UserID: 1, ProjectID: 1, StartAt: start, EndAt: &end, Note: "night shift",
 	})
 
@@ -83,7 +81,7 @@ func TestSplitDSTSpringForward(t *testing.T) {
 	berlin := loadLoc(t, "Europe/Berlin")
 	start := time.Date(2026, 3, 29, 1, 30, 0, 0, berlin)
 	end := time.Date(2026, 3, 29, 3, 30, 0, 0, berlin)
-	in := fixture("Europe/Berlin", store.Entry{
+	in := fixture("Europe/Berlin", Entry{
 		ID: 1, UserID: 1, ProjectID: 1, StartAt: start, EndAt: &end,
 	})
 
@@ -105,7 +103,7 @@ func TestSplitDSTFallBack(t *testing.T) {
 	// Constructed in UTC to pick the two distinct instants unambiguously.
 	start := time.Date(2026, 10, 25, 0, 30, 0, 0, time.UTC) // 02:30+02:00 Berlin
 	end := time.Date(2026, 10, 25, 1, 30, 0, 0, time.UTC)   // 02:30+01:00 Berlin
-	in := fixture("Europe/Berlin", store.Entry{
+	in := fixture("Europe/Berlin", Entry{
 		ID: 1, UserID: 1, ProjectID: 1, StartAt: start, EndAt: &end,
 	})
 
@@ -133,7 +131,7 @@ func TestSplitDSTFallBack(t *testing.T) {
 func TestSplitISOWeekYearEdge(t *testing.T) {
 	start := time.Date(2027, 1, 1, 9, 0, 0, 0, time.UTC)
 	end := time.Date(2027, 1, 1, 10, 0, 0, 0, time.UTC)
-	in := fixture("UTC", store.Entry{
+	in := fixture("UTC", Entry{
 		ID: 1, UserID: 1, ProjectID: 1, StartAt: start, EndAt: &end,
 	})
 
@@ -168,8 +166,8 @@ func TestSplitClipsToRange(t *testing.T) {
 	onTo := time.Date(2026, 10, 21, 0, 0, 0, 0, time.UTC)
 	onToEnd := time.Date(2026, 10, 21, 1, 0, 0, 0, time.UTC)
 	in := fixture("UTC",
-		store.Entry{ID: 1, UserID: 1, ProjectID: 1, StartAt: before, EndAt: &beforeEnd},
-		store.Entry{ID: 2, UserID: 1, ProjectID: 1, StartAt: onTo, EndAt: &onToEnd},
+		Entry{ID: 1, UserID: 1, ProjectID: 1, StartAt: before, EndAt: &beforeEnd},
+		Entry{ID: 2, UserID: 1, ProjectID: 1, StartAt: onTo, EndAt: &onToEnd},
 	)
 
 	segs := mustSplit(t, in, date(2026, 10, 19), date(2026, 10, 21))
@@ -194,8 +192,8 @@ func TestAggregateBuckets(t *testing.T) {
 	d2s := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
 	d2e := time.Date(2026, 10, 20, 11, 0, 0, 0, time.UTC)
 	in := fixture("UTC",
-		store.Entry{ID: 1, UserID: 1, ProjectID: 1, StartAt: d1s, EndAt: &d1e},
-		store.Entry{ID: 2, UserID: 1, ProjectID: 1, StartAt: d2s, EndAt: &d2e},
+		Entry{ID: 1, UserID: 1, ProjectID: 1, StartAt: d1s, EndAt: &d1e},
+		Entry{ID: 2, UserID: 1, ProjectID: 1, StartAt: d2s, EndAt: &d2e},
 	)
 
 	segs := mustSplit(t, in, date(2026, 10, 19), date(2026, 10, 21))
@@ -234,7 +232,7 @@ func TestWriteCSV(t *testing.T) {
 	start := time.Date(2026, 10, 19, 9, 0, 0, 0, berlin)
 	end := time.Date(2026, 10, 19, 11, 30, 0, 0, berlin)
 	note := `drag, resize, "snap"`
-	in := fixture("Europe/Berlin", store.Entry{
+	in := fixture("Europe/Berlin", Entry{
 		ID: 1, UserID: 1, ProjectID: 1, StartAt: start, EndAt: &end, Note: note,
 	})
 	segs := mustSplit(t, in, date(2026, 10, 19), date(2026, 10, 20))
@@ -263,11 +261,29 @@ func TestWriteCSV(t *testing.T) {
 	}
 }
 
+// 7b. A text cell that starts with a formula character is prefixed so a
+// spreadsheet shows it instead of running it.
+func TestWriteCSVDefusesFormulas(t *testing.T) {
+	for _, note := range []string{"=1+1", "+1", "-1", "@SUM(A1)", "\tx", "=cmd|' /C calc'!A0"} {
+		var buf bytes.Buffer
+		if err := WriteCSV(&buf, []Segment{{Note: note, Date: "2026-10-19", Week: "2026-W43"}}); err != nil {
+			t.Fatalf("WriteCSV(%q): %v", note, err)
+		}
+		records, err := csv.NewReader(strings.NewReader(buf.String())).ReadAll()
+		if err != nil {
+			t.Fatalf("re-reading CSV for %q: %v", note, err)
+		}
+		if got := records[1][9]; got != "'"+note {
+			t.Errorf("note %q became %q, want a leading quote", note, got)
+		}
+	}
+}
+
 // 8. A running entry contributes nothing when Now is zero, and is clipped to
 // Now when it is set.
 func TestSplitRunningEntry(t *testing.T) {
 	start := time.Date(2026, 10, 19, 9, 0, 0, 0, time.UTC)
-	entry := store.Entry{ID: 1, UserID: 1, ProjectID: 1, StartAt: start, EndAt: nil}
+	entry := Entry{ID: 1, UserID: 1, ProjectID: 1, StartAt: start, EndAt: nil}
 
 	// Zero Now: nothing.
 	in := fixture("UTC", entry)
@@ -290,7 +306,7 @@ func TestSplitRunningEntry(t *testing.T) {
 func TestSplitMissingReferences(t *testing.T) {
 	start := time.Date(2026, 10, 19, 9, 0, 0, 0, time.UTC)
 	end := start.Add(time.Hour)
-	in := fixture("UTC", store.Entry{ID: 7, UserID: 99, ProjectID: 1, StartAt: start, EndAt: &end})
+	in := fixture("UTC", Entry{ID: 7, UserID: 99, ProjectID: 1, StartAt: start, EndAt: &end})
 	_, err := Split(in, date(2026, 10, 19), date(2026, 10, 20))
 	if err == nil || !strings.Contains(err.Error(), "unknown user 99") {
 		t.Errorf("err = %v, want unknown user 99", err)

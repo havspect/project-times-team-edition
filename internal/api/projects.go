@@ -158,13 +158,6 @@ func (s *Server) patchProject(ctx context.Context, in *projectPatchInput) (*proj
 	}
 	body := in.Body
 	if body.TeamID != nil && *body.TeamID != p.TeamID {
-		has, err := s.Store.HasEntries(p.ID)
-		if err != nil {
-			return nil, internal(err)
-		}
-		if has {
-			return nil, problem(http.StatusUnprocessableEntity, urnProjectHasEntries, "a project with entries cannot change team")
-		}
 		if err := s.requireProjectTeam(*body.TeamID); err != nil {
 			return nil, err
 		}
@@ -174,6 +167,11 @@ func (s *Server) patchProject(ctx context.Context, in *projectPatchInput) (*proj
 		}
 		if !ok {
 			return nil, problem(http.StatusForbidden, urnForbidden, "you do not lead the target team")
+		}
+		// The check and the write are one statement, so an entry created in
+		// between cannot land on a project that just changed teams.
+		if err := s.Store.MoveProject(p.ID, *body.TeamID, s.Clock.Now()); err != nil {
+			return nil, fail(err)
 		}
 		p.TeamID = *body.TeamID
 	}

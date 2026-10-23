@@ -10,7 +10,7 @@ import (
 func seedEntryWorld(t *testing.T) (*Store, *User, *Project) {
 	t.Helper()
 	s := openTestStore(t)
-	u := &User{Email: "ada@example.com", Name: "Ada", PasswordHash: "x"}
+	u := &User{Email: "ada@example.com", Name: "Ada", PasswordHash: "x", Active: true}
 	if err := s.CreateUser(u); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestEntryRoundTripAndRestore(t *testing.T) {
 
 	e.Note = "edited"
 	e.StartAt = at(8)
-	if err := s.UpdateEntry(e); err != nil {
+	if err := s.UpdateEntry(e.ID, at(9), map[string]any{"note": e.Note, "start_at": e.StartAt}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	got, err = s.EntryByID(e.ID)
@@ -188,13 +188,50 @@ func TestRestoreRunningEntryConflictsWithTheNewOne(t *testing.T) {
 	}
 }
 
-func TestDeactivateUserStopsRunningEntry(t *testing.T) {
+// A note-only update writes the note and nothing else, so a stop that landed
+// after the caller read the entry is not undone by a stale end_at.
+func TestUpdateEntryWritesOnlyTheNamedColumns(t *testing.T) {
+	s, u, p := seedEntryWorld(t)
+	running := &Entry{UserID: u.ID, ProjectID: p.ID, StartAt: at(9)}
+	if err := s.CreateEntry(running); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	stale, err := s.EntryByID(running.ID)
+	if err != nil {
+		t.Fatalf("by id: %v", err)
+	}
+
+	// The stop lands after the handler's read and before its write.
+	if err := s.StopRunning(u.ID, at(10), ""); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	if err := s.UpdateEntry(stale.ID, at(11), map[string]any{"note": "typed while stopping"}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	got, err := s.EntryByID(stale.ID)
+	if err != nil {
+		t.Fatalf("by id after update: %v", err)
+	}
+	if got.EndAt == nil || !got.EndAt.Equal(at(10)) {
+		t.Fatalf("end_at = %v, want the stop at %v to survive", got.EndAt, at(10))
+	}
+	if got.Note != "typed while stopping" {
+		t.Errorf("note = %q, want the new note", got.Note)
+	}
+	if !got.UpdatedAt.Equal(at(11)) {
+		t.Errorf("updated_at = %v, want %v", got.UpdatedAt, at(11))
+	}
+}
+
+func TestSaveUserStopsTheRunningEntryOnDeactivation(t *testing.T) {
 	s, u, p := seedEntryWorld(t)
 	if err := s.CreateEntry(&Entry{UserID: u.ID, ProjectID: p.ID, StartAt: at(9), Note: "keep me"}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
-	if err := s.DeactivateUser(u.ID, at(10)); err != nil {
+	u.Active = false
+	if err := s.SaveUser(u, at(10)); err != nil {
 		t.Fatalf("deactivate: %v", err)
 	}
 	got, err := s.UserByID(u.ID)
@@ -214,17 +251,20 @@ func TestDeactivateUserStopsRunningEntry(t *testing.T) {
 	if stopped.EndAt == nil || !stopped.EndAt.Equal(at(10)) || stopped.Note != DeactivationNote {
 		t.Fatalf("stopped entry = %+v, want end %v and note %q", stopped, at(10), DeactivationNote)
 	}
-
-	if err := s.DeactivateUser(999, at(10)); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("deactivate unknown = %v, want ErrNotFound", err)
-	}
 }
 
-func TestHasEntriesCountsDeleted(t *testing.T) {
+func TestMoveProjectRefusesAProjectWithEntries(t *testing.T) {
 	s, u, p := seedEntryWorld(t)
-	if ok, err := s.HasEntries(p.ID); err != nil || ok {
-		t.Fatalf("empty project: ok=%t err=%v", ok, err)
+	other := &Team{Name: "Mobile"}
+	if err := s.CreateTeam(other); err != nil {
+		t.Fatalf("create team: %v", err)
 	}
+
+	if err := s.MoveProject(p.ID, other.ID, at(9)); err != nil {
+		t.Fatalf("move an empty project: %v", err)
+	}
+
+	// Deleted rows count too, so a restored entry cannot land in another team.
 	e := finished(u.ID, p.ID, at(9), at(11))
 	if err := s.CreateEntry(e); err != nil {
 		t.Fatalf("create: %v", err)
@@ -232,9 +272,8 @@ func TestHasEntriesCountsDeleted(t *testing.T) {
 	if err := s.SoftDeleteEntry(e.ID, at(12)); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	// A restored entry must not land in a different team, so deleted rows count.
-	if ok, err := s.HasEntries(p.ID); err != nil || !ok {
-		t.Fatalf("deleted entry not counted: ok=%t err=%v", ok, err)
+	if err := s.MoveProject(p.ID, p.TeamID, at(13)); !errors.Is(err, ErrProjectHasEntries) {
+		t.Fatalf("move a project with a deleted entry = %v, want ErrProjectHasEntries", err)
 	}
 }
 

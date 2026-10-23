@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"reflect"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -20,21 +21,45 @@ type timerConflict struct {
 
 // timerRoutes registers the running-entry endpoints.
 func (s *Server) timerRoutes(api huma.API) {
+	// The body is an entry or null, but Huma cannot mark an object ref nullable
+	// (it panics), so the 200 schema spells the choice out as anyOf.
+	entryOrNull := &huma.Schema{AnyOf: []*huma.Schema{
+		api.OpenAPI().Components.Schemas.Schema(reflect.TypeFor[entryResponse](), true, "TimerEntry"),
+		{Type: "null"},
+	}}
 	huma.Register(api, huma.Operation{
 		OperationID: "timer-get",
 		Method:      http.MethodGet,
 		Path:        apiPrefix + "/timer",
 		Tags:        []string{"timer"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusInternalServerError},
+		Responses: map[string]*huma.Response{
+			"200": {
+				Content: map[string]*huma.MediaType{
+					"application/json": {Schema: entryOrNull},
+				},
+			},
+		},
 	}, s.getTimer)
 
+	// The 409 carries the entry that is already running, so a client can offer
+	// to stop it; Errors would only describe the plain problem body.
+	conflictSchema := api.OpenAPI().Components.Schemas.Schema(reflect.TypeFor[timerConflict](), true, "TimerConflict")
 	huma.Register(api, huma.Operation{
 		OperationID:   "timer-start",
 		Method:        http.MethodPost,
 		Path:          apiPrefix + "/timer/start",
 		Tags:          []string{"timer"},
 		DefaultStatus: http.StatusCreated,
-		Errors:        []int{http.StatusUnauthorized, http.StatusConflict, http.StatusUnprocessableEntity, http.StatusInternalServerError},
+		Errors:        []int{http.StatusUnauthorized, http.StatusUnprocessableEntity, http.StatusInternalServerError},
+		Responses: map[string]*huma.Response{
+			"409": {
+				Description: "A timer is already running; the body names it.",
+				Content: map[string]*huma.MediaType{
+					"application/problem+json": {Schema: conflictSchema},
+				},
+			},
+		},
 	}, s.startTimer)
 
 	huma.Register(api, huma.Operation{
@@ -77,12 +102,14 @@ func (s *Server) startTimer(ctx context.Context, in *timerStartInput) (*entryOut
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.requireLoggableProject(in.Body.ProjectID); err != nil {
+	if err := s.requireLoggableProject(in.Body.ProjectID); err != nil {
 		return nil, err
 	}
-	if conflict, err := s.runningConflict(u); err != nil {
+	conflict, err := s.runningConflict(u)
+	if err != nil {
 		return nil, err
-	} else if conflict != nil {
+	}
+	if conflict != nil {
 		return nil, conflict
 	}
 	now := s.Clock.Now()
@@ -150,10 +177,7 @@ func (s *Server) runningConflict(u *store.User) (*timerConflict, error) {
 		return nil, internal(err)
 	}
 	return &timerConflict{
-		ErrorModel: huma.ErrorModel{
-			Type: urnTimerAlreadyRunning, Title: http.StatusText(http.StatusConflict),
-			Status: http.StatusConflict, Detail: "you already have a running entry",
-		},
+		ErrorModel:   *problem(http.StatusConflict, urnTimerAlreadyRunning, "you already have a running entry"),
 		RunningEntry: entryResponseOf(running),
 	}, nil
 }

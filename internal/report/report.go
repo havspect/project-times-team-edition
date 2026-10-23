@@ -12,18 +12,49 @@ import (
 	"sort"
 	"strconv"
 	"time"
-
-	"github.com/havspect/project-times/internal/store"
 )
 
 const dateLayout = "2006-01-02"
 
+// Entry is the part of a stored entry a report reads.
+type Entry struct {
+	ID        uint
+	UserID    uint
+	ProjectID uint
+	StartAt   time.Time
+	EndAt     *time.Time
+	Note      string
+	DeletedAt *time.Time
+}
+
+// User is the part of a stored user a report reads.
+type User struct {
+	ID       uint
+	Name     string
+	Email    string
+	Timezone string
+}
+
+// Project is the part of a stored project a report reads.
+type Project struct {
+	ID         uint
+	TeamID     uint
+	Name       string
+	ArchivedAt *time.Time
+}
+
+// Team is the part of a stored team a report reads.
+type Team struct {
+	ID   uint
+	Name string
+}
+
 // Input is everything Split needs, already loaded and scoped by the caller.
 type Input struct {
-	Entries  []store.Entry
-	Users    []store.User
-	Projects []store.Project
-	Teams    []store.Team
+	Entries  []Entry
+	Users    []User
+	Projects []Project
+	Teams    []Team
 	// Now clips a still-running entry (EndAt == nil) to Now-start. Zero means
 	// running entries contribute nothing.
 	Now time.Time
@@ -68,15 +99,15 @@ func Split(in Input, from, to time.Time) ([]Segment, error) {
 	fromDate := from.Format(dateLayout)
 	toDate := to.Format(dateLayout)
 
-	users := make(map[uint]store.User, len(in.Users))
+	users := make(map[uint]User, len(in.Users))
 	for _, u := range in.Users {
 		users[u.ID] = u
 	}
-	projects := make(map[uint]store.Project, len(in.Projects))
+	projects := make(map[uint]Project, len(in.Projects))
 	for _, p := range in.Projects {
 		projects[p.ID] = p
 	}
-	teams := make(map[uint]store.Team, len(in.Teams))
+	teams := make(map[uint]Team, len(in.Teams))
 	for _, t := range in.Teams {
 		teams[t.ID] = t
 	}
@@ -204,6 +235,9 @@ func Aggregate(segments []Segment, by string) ([]Row, int64) {
 		if rows[i].User != rows[j].User {
 			return rows[i].User < rows[j].User
 		}
+		if rows[i].UserID != rows[j].UserID {
+			return rows[i].UserID < rows[j].UserID
+		}
 		if rows[i].Project != rows[j].Project {
 			return rows[i].Project < rows[j].Project
 		}
@@ -224,15 +258,29 @@ func WriteCSV(w io.Writer, segments []Segment) error {
 	}
 	for _, s := range segments {
 		if err := cw.Write([]string{
-			s.Date, s.Week, s.User, s.Email, s.Team, s.Project,
+			s.Date, s.Week, csvCell(s.User), csvCell(s.Email), csvCell(s.Team), csvCell(s.Project),
 			s.Start.Format(time.RFC3339), s.End.Format(time.RFC3339),
-			strconv.FormatInt(s.Seconds, 10), s.Note,
+			strconv.FormatInt(s.Seconds, 10), csvCell(s.Note),
 		}); err != nil {
 			return err
 		}
 	}
 	cw.Flush()
 	return cw.Error()
+}
+
+// csvCell stops a spreadsheet from running a text cell as a formula. CSV quoting
+// alone does not: Excel, LibreOffice and Sheets treat a leading = + - @ (or tab)
+// as a formula and evaluate it, so one note could run code on the exporter's machine.
+func csvCell(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
 }
 
 // location loads and caches the subject's IANA timezone; empty means UTC.

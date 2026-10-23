@@ -296,13 +296,16 @@ func checkStatus(t *testing.T, identity, endpoint string, rec *httptest.Response
 
 // TestOpenAPIListsSpecRoutes is the spec's guard against a forgotten Huma
 // registration: the document must list every route the HTTP API table names.
-func TestOpenAPIListsStage2Routes(t *testing.T) {
+func TestOpenAPIListsSpecRoutes(t *testing.T) {
 	rec := get(t, apiPrefix+"/openapi.json")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("openapi status = %d, want 200", rec.Code)
 	}
 	var doc struct {
-		Paths map[string]map[string]json.RawMessage `json:"paths"`
+		Paths      map[string]map[string]json.RawMessage `json:"paths"`
+		Components struct {
+			Schemas map[string]json.RawMessage `json:"schemas"`
+		} `json:"components"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
 		t.Fatalf("decode openapi: %v", err)
@@ -348,5 +351,14 @@ func TestOpenAPIListsStage2Routes(t *testing.T) {
 			}
 			t.Errorf("openapi.json has no %s %s (paths: %s)", r.method, r.path, strings.Join(paths, " "))
 		}
+	}
+
+	// GET /timer is an entry or null, and the 409 names the running entry; both
+	// are shapes generated clients need and neither comes from a struct tag.
+	if get := string(doc.Paths[apiPrefix+"/timer"][strings.ToLower(http.MethodGet)]); !strings.Contains(get, `"null"`) {
+		t.Error("openapi.json does not say GET /timer may return null")
+	}
+	if conflict := string(doc.Components.Schemas["TimerConflict"]); !strings.Contains(conflict, "running_entry") {
+		t.Errorf("openapi.json TimerConflict = %s, want a running_entry field", conflict)
 	}
 }

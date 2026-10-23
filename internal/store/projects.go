@@ -1,5 +1,10 @@
 package store
 
+import (
+	"errors"
+	"time"
+)
+
 // CreateProject inserts a project.
 func (s *Store) CreateProject(p *Project) error {
 	return s.db.Create(p).Error
@@ -25,9 +30,30 @@ func (s *Store) Projects(includeArchived bool) ([]Project, error) {
 	return out, err
 }
 
-// UpdateProject writes p's name, color, team and archive state; it never inserts.
+// UpdateProject writes p's name, color and archive state; it never inserts.
+// Moving a project to another team is MoveProject, which can refuse.
 func (s *Store) UpdateProject(p *Project) error {
-	return s.db.Model(p).Select("Name", "Color", "TeamID", "ArchivedAt").Updates(p).Error
+	return s.db.Model(p).Select("Name", "Color", "ArchivedAt").Updates(p).Error
+}
+
+// ErrProjectHasEntries is returned by MoveProject while any entry, deleted ones
+// included, is booked on the project: a restored entry must not land in a
+// different team.
+var ErrProjectHasEntries = errors.New("project has entries")
+
+// MoveProject changes a project's team in one statement that refuses while the
+// project has entries, so an entry cannot slip in between a check and a write.
+func (s *Store) MoveProject(id, teamID uint, at time.Time) error {
+	res := s.db.Model(&Project{}).
+		Where("id = ? AND NOT EXISTS (SELECT 1 FROM entries WHERE project_id = ?)", id, id).
+		UpdateColumns(map[string]any{"team_id": teamID, "updated_at": at})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrProjectHasEntries
+	}
+	return nil
 }
 
 // TeamAcceptsProjects reports whether teamID exists and is not archived, the

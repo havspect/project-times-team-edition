@@ -23,6 +23,7 @@ func TestFail(t *testing.T) {
 		{"last admin", store.ErrLastAdmin, http.StatusUnprocessableEntity, urnLastAdmin},
 		{"unknown user", fmt.Errorf("%w: 42", store.ErrUnknownUser), http.StatusUnprocessableEntity, urnInvalidInput},
 		{"running entry", store.ErrEntryRunning, http.StatusConflict, urnTimerAlreadyRunning},
+		{"project has entries", store.ErrProjectHasEntries, http.StatusUnprocessableEntity, urnProjectHasEntries},
 		{"unexpected failure", errors.New("disk is on fire"), http.StatusInternalServerError, urnInternal},
 	}
 	for _, tt := range cases {

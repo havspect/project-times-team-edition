@@ -45,9 +45,12 @@ func (s *Store) EntryByID(id uint) (*Entry, error) {
 	return &e, nil
 }
 
-// UpdateEntry writes the fields a user may retime or re-project; it never inserts.
-func (s *Store) UpdateEntry(e *Entry) error {
-	return s.db.Model(e).Select("StartAt", "EndAt", "ProjectID", "Note").Updates(e).Error
+// UpdateEntry writes the columns named in changes for the entry with id, plus
+// updated_at from the injected clock. It writes nothing else, so a stop that
+// landed after the caller read the entry is not undone by a note edit.
+func (s *Store) UpdateEntry(id uint, at time.Time, changes map[string]any) error {
+	changes["updated_at"] = at
+	return s.db.Model(&Entry{}).Where("id = ?", id).UpdateColumns(changes).Error
 }
 
 // SoftDeleteEntry sets deleted_at on a live entry; an unknown or already deleted
@@ -109,31 +112,6 @@ func (s *Store) StopRunning(userID uint, at time.Time, note string) error {
 		return ErrNotFound
 	}
 	return nil
-}
-
-// DeactivateUser turns a user off and stops their running entry at at, in one
-// step so a deactivated user is never left with a timer nobody can reach.
-func (s *Store) DeactivateUser(id uint, at time.Time) error {
-	return s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.First(&User{}, id).Error; err != nil {
-			return translate(err)
-		}
-		if err := tx.Model(&Entry{}).
-			Where("user_id = ? AND end_at IS NULL AND deleted_at IS NULL", id).
-			UpdateColumns(map[string]any{"end_at": at, "note": DeactivationNote, "updated_at": at}).Error; err != nil {
-			return err
-		}
-		return tx.Model(&User{}).Where("id = ?", id).
-			UpdateColumns(map[string]any{"active": false, "updated_at": at}).Error
-	})
-}
-
-// HasEntries reports whether any entry, deleted ones included, is booked on the
-// project; a restored entry must not land in a different team.
-func (s *Store) HasEntries(projectID uint) (bool, error) {
-	var n int64
-	err := s.db.Model(&Entry{}).Where("project_id = ?", projectID).Count(&n).Error
-	return n > 0, err
 }
 
 // EntriesInRange returns live entries overlapping [from, to), oldest first.
