@@ -5,6 +5,9 @@
   import { currentWeek, formatDuration } from '../lib/format'
   import { csvHref, sectionize, totalSeconds, type ReportRow } from '../lib/reports'
   import { session } from '../lib/session.svelte'
+  import Button from '../lib/ui/Button.svelte'
+  import Input from '../lib/ui/Input.svelte'
+  import Select from '../lib/ui/Select.svelte'
 
   type Project = components['schemas']['ProjectResponse']
   type Team = components['schemas']['TeamResponse']
@@ -142,50 +145,35 @@
 {/if}
 
 <form class="toolbar" onsubmit={(event) => { event.preventDefault(); void load() }}>
-  <div class="field">
-    <label for="report-from">From</label>
-    <input id="report-from" type="date" bind:value={from} required />
-  </div>
-  <div class="field">
-    <label for="report-to">To</label>
-    <input id="report-to" type="date" bind:value={to} required />
-  </div>
-  <div class="field">
-    <label for="report-team">Team</label>
-    <select id="report-team" bind:value={teamID}>
-      <option value="">All teams</option>
-      {#each teams as team (team.id)}
-        <option value={String(team.id)}>{team.name}{team.archived ? ' (archived)' : ''}</option>
-      {/each}
-    </select>
-  </div>
-  <div class="field">
-    <label for="report-project">Project</label>
-    <select id="report-project" bind:value={projectID}>
-      <option value="">All projects</option>
-      {#each projects as project (project.id)}
-        <option value={String(project.id)}>
-          {project.name}{project.archived_at ? ' (archived)' : ''}
-        </option>
-      {/each}
-    </select>
-  </div>
-  <div class="field">
-    <label for="report-person">Person</label>
-    <select id="report-person" bind:value={personID}>
-      <option value="">Everyone</option>
-      {#each people as person (person.id)}
-        <option value={String(person.id)}>{person.name}</option>
-      {/each}
-    </select>
-  </div>
+  <Input id="report-from" label="From" type="date" bind:value={from} required />
+  <Input id="report-to" label="To" type="date" bind:value={to} required />
+  <Select id="report-team" label="Team" bind:value={teamID}>
+    <option value="">All teams</option>
+    {#each teams as team (team.id)}
+      <option value={String(team.id)}>{team.name}{team.archived ? ' (archived)' : ''}</option>
+    {/each}
+  </Select>
+  <Select id="report-project" label="Project" bind:value={projectID}>
+    <option value="">All projects</option>
+    {#each projects as project (project.id)}
+      <option value={String(project.id)}>
+        {project.name}{project.archived_at ? ' (archived)' : ''}
+      </option>
+    {/each}
+  </Select>
+  <Select id="report-person" label="Person" bind:value={personID}>
+    <option value="">Everyone</option>
+    {#each people as person (person.id)}
+      <option value={String(person.id)}>{person.name}</option>
+    {/each}
+  </Select>
   <div class="tabs" role="group" aria-label="Group by">
-    <button type="button" aria-pressed={by === 'week'} onclick={() => (by = 'week')}>Week</button>
-    <button type="button" aria-pressed={by === 'day'} onclick={() => (by = 'day')}>Day</button>
+    <Button variant="secondary" active={by === 'week'} onclick={() => (by = 'week')}>Week</Button>
+    <Button variant="secondary" active={by === 'day'} onclick={() => (by = 'day')}>Day</Button>
   </div>
-  <button class="primary" type="submit" disabled={loading}>
+  <Button type="submit" disabled={loading}>
     {loading ? 'Loading…' : 'Apply'}
-  </button>
+  </Button>
   <p class="hint">
     The end date is exclusive. Hours are bucketed in each person's timezone; your week ({zone})
     seeds the range.

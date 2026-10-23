@@ -3,6 +3,8 @@
   import AdminNav from '../lib/AdminNav.svelte'
   import { api, problemMessage } from '../lib/api'
   import type { components } from '../lib/api/schema'
+  import Button from '../lib/ui/Button.svelte'
+  import Input from '../lib/ui/Input.svelte'
 
   type Team = components['schemas']['TeamResponse']
   type User = components['schemas']['UserResponse']
@@ -170,13 +172,10 @@
 {/if}
 
 <form class="toolbar" onsubmit={create}>
-  <div class="field">
-    <label for="new-team">Name</label>
-    <input id="new-team" bind:value={teamName} required />
-  </div>
-  <button class="primary" type="submit" disabled={createPending}>
+  <Input id="new-team" label="Name" bind:value={teamName} required />
+  <Button type="submit" disabled={createPending}>
     {createPending ? 'Creating…' : 'Create team'}
-  </button>
+  </Button>
 </form>
 
 {#if loading}
@@ -205,20 +204,19 @@
           </td>
           <td>
             <div class="row-actions">
-              <button class="ghost" type="button" onclick={() => startRename(team)}>
+              <Button variant="secondary" onclick={() => startRename(team)}>
                 {renaming === team.id ? 'Close' : 'Rename'}
-              </button>
-              <button class="ghost" type="button" onclick={() => toggleMembers(team)}>
+              </Button>
+              <Button variant="secondary" onclick={() => toggleMembers(team)}>
                 {expanded === team.id ? 'Close members' : 'Members'}
-              </button>
-              <button
-                class="ghost"
-                type="button"
+              </Button>
+              <Button
+                variant="secondary"
                 onclick={() => archive(team)}
                 disabled={archiving === team.id || team.archived_at !== null}
               >
                 {archiving === team.id ? 'Archiving…' : 'Archive'}
-              </button>
+              </Button>
             </div>
           </td>
         </tr>
@@ -226,14 +224,11 @@
           <tr>
             <td colspan="4">
               <form class="toolbar" onsubmit={(event) => rename(event, team)}>
-                <div class="field">
-                  <label for={`rename-${team.id}`}>Name</label>
-                  <input id={`rename-${team.id}`} bind:value={renameName} required />
-                </div>
-                <button class="primary" type="submit" disabled={renamePending}>
+                <Input id={`rename-${team.id}`} label="Name" bind:value={renameName} required />
+                <Button type="submit" disabled={renamePending}>
                   {renamePending ? 'Saving…' : 'Save'}
-                </button>
-                <button class="ghost" type="button" onclick={() => (renaming = null)}>Cancel</button>
+                </Button>
+                <Button variant="secondary" onclick={() => (renaming = null)}>Cancel</Button>
               </form>
             </td>
           </tr>
@@ -268,10 +263,10 @@
                   {/each}
                 </div>
                 <div class="row-actions">
-                  <button class="primary" type="submit" disabled={membersPending === team.id}>
+                  <Button type="submit" disabled={membersPending === team.id}>
                     {membersPending === team.id ? 'Saving…' : 'Save members'}
-                  </button>
-                  <button class="ghost" type="button" onclick={() => (expanded = null)}>Cancel</button>
+                  </Button>
+                  <Button variant="secondary" onclick={() => (expanded = null)}>Cancel</Button>
                   <p class="hint">Saving replaces the whole member list.</p>
                 </div>
               </form>

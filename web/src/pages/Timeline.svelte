@@ -6,6 +6,10 @@
   import { session } from '../lib/session.svelte'
   import { FINE_SNAP, SNAP, clampRange, orderProjects, snap } from '../lib/timeline/layout'
   import { addDays, instantToWallTime, localDate, wallTimeToInstant, zonedParts } from '../lib/timeline/time'
+  import Button from '../lib/ui/Button.svelte'
+  import Input from '../lib/ui/Input.svelte'
+  import Select from '../lib/ui/Select.svelte'
+  import Textarea from '../lib/ui/Textarea.svelte'
 
   type Entry = components['schemas']['EntryResponse']
   type Project = components['schemas']['ProjectResponse']
@@ -184,7 +188,6 @@
   let panelStart = $state('')
   let panelEnd = $state('')
   let panelNote = $state('')
-  let panelFirst = $state<HTMLSelectElement>()
   const panelRunning = $derived(panelEntry !== null && panelEntry.end_at === null)
 
   let requestID = 0
@@ -244,7 +247,7 @@
 
   $effect(() => {
     if (panelMode === null) return
-    void tick().then(() => panelFirst?.focus())
+    void tick().then(() => document.getElementById('panel-project')?.focus())
   })
 
   onMount(() => {
@@ -646,9 +649,9 @@
 
   <div class="toolbar">
     <div class="timeline-nav">
-      <button class="ghost" type="button" aria-label="Previous day" onclick={() => shiftDay(-1)}>◀</button>
-      <button class="ghost" type="button" onclick={goToday}>Today</button>
-      <button class="ghost" type="button" aria-label="Next day" onclick={() => shiftDay(1)}>▶</button>
+      <Button variant="secondary" aria-label="Previous day" onclick={() => shiftDay(-1)}>◀</Button>
+      <Button variant="secondary" onclick={goToday}>Today</Button>
+      <Button variant="secondary" aria-label="Next day" onclick={() => shiftDay(1)}>▶</Button>
     </div>
     <span class="day-title">{dayTitle}</span>
     <p class="hint">
@@ -786,56 +789,57 @@
       <aside class="entry-panel" aria-label={panelMode === 'new' ? 'New entry' : 'Edit entry'}>
         <h2>{panelMode === 'new' ? 'New entry' : 'Edit entry'}</h2>
         <form onsubmit={(event) => { event.preventDefault(); void savePanel() }}>
-          <div class="field">
-            <label for="panel-project">Project</label>
-            <select id="panel-project" bind:this={panelFirst} bind:value={panelProject} disabled={pending}>
-              {#if panelEntry && !projectByID.has(panelEntry.project_id)}
-                <option value={String(panelEntry.project_id)}>Archived project</option>
-              {/if}
-              {#each choices as project (project.id)}
-                <option value={String(project.id)}>{project.name}</option>
-              {/each}
-            </select>
-          </div>
-          <div class="field">
-            <label for="panel-start">Start</label>
-            <input
-              id="panel-start"
+          <Select
+            id="panel-project"
+            label="Project"
+            bind:value={panelProject}
+            disabled={pending}
+          >
+            {#if panelEntry && !projectByID.has(panelEntry.project_id)}
+              <option value={String(panelEntry.project_id)}>Archived project</option>
+            {/if}
+            {#each choices as project (project.id)}
+              <option value={String(project.id)}>{project.name}</option>
+            {/each}
+          </Select>
+          <Input
+            id="panel-start"
+            label="Start"
+            type="datetime-local"
+            step="60"
+            bind:value={panelStart}
+            disabled={pending || panelRunning}
+          />
+          {#if !panelRunning}
+            <Input
+              id="panel-end"
+              label="End"
               type="datetime-local"
               step="60"
-              bind:value={panelStart}
-              disabled={pending || panelRunning}
+              bind:value={panelEnd}
+              disabled={pending}
             />
-          </div>
-          {#if !panelRunning}
-            <div class="field">
-              <label for="panel-end">End</label>
-              <input
-                id="panel-end"
-                type="datetime-local"
-                step="60"
-                bind:value={panelEnd}
-                disabled={pending}
-              />
-            </div>
           {/if}
-          <div class="field">
-            <label for="panel-note">Note</label>
-            <textarea id="panel-note" rows="3" bind:value={panelNote} disabled={pending}></textarea>
-          </div>
+          <Textarea
+            id="panel-note"
+            label="Note"
+            rows={3}
+            bind:value={panelNote}
+            disabled={pending}
+          />
           <div class="row-actions">
-            <button class="primary" type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending}>
               {pending ? 'Saving…' : 'Save'}
-            </button>
+            </Button>
             {#if panelMode === 'edit'}
-              <button class="ghost" type="button" onclick={stopTimer} disabled={pending || !panelRunning}>
+              <Button variant="secondary" onclick={stopTimer} disabled={pending || !panelRunning}>
                 Stop now
-              </button>
-              <button class="danger" type="button" onclick={deletePanelEntry} disabled={pending}>
+              </Button>
+              <Button variant="danger" onclick={deletePanelEntry} disabled={pending}>
                 Delete
-              </button>
+              </Button>
             {/if}
-            <button class="ghost" type="button" onclick={closePanel} disabled={pending}>Cancel</button>
+            <Button variant="secondary" onclick={closePanel} disabled={pending}>Cancel</Button>
           </div>
           {#if panelRunning}
             <p class="hint">Running since {panelStart.replace('T', ' ')}. Stop it to change the start.</p>
@@ -848,10 +852,11 @@
 
 <dialog class="project-picker" bind:this={pickerEl} aria-label="Add project">
   <h2>Add project</h2>
-  <input
+  <Input
+    id="picker-search"
+    label="Search projects"
     type="search"
     placeholder="Search projects…"
-    aria-label="Search projects"
     bind:value={pickerFilter}
   />
   {#if pickable.length === 0}
@@ -869,6 +874,6 @@
     </ul>
   {/if}
   <div class="row-actions">
-    <button class="ghost" type="button" onclick={() => pickerEl?.close()}>Cancel</button>
+    <Button variant="secondary" onclick={() => pickerEl?.close()}>Cancel</Button>
   </div>
 </dialog>

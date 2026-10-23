@@ -1,5 +1,7 @@
 <script lang="ts">
   import { session } from '../lib/session.svelte'
+  import Button from '../lib/ui/Button.svelte'
+  import Input from '../lib/ui/Input.svelte'
 
   let email = $state('')
   let password = $state('')
@@ -25,11 +27,16 @@
   {#if error}
     <p class="error" role="alert">{error}</p>
   {/if}
-  <label for="email">Email</label>
-  <input id="email" type="email" bind:value={email} required autocomplete="username" />
-  <label for="password">Password</label>
-  <input id="password" type="password" bind:value={password} required autocomplete="current-password" />
-  <button class="primary" type="submit" disabled={pending}>
+  <Input id="email" label="Email" type="email" bind:value={email} required autocomplete="username" />
+  <Input
+    id="password"
+    label="Password"
+    type="password"
+    bind:value={password}
+    required
+    autocomplete="current-password"
+  />
+  <Button type="submit" disabled={pending}>
     {pending ? 'Signing in…' : 'Sign in'}
-  </button>
+  </Button>
 </form>

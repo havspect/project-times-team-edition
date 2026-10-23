@@ -2,6 +2,8 @@
   import { api, problemMessage } from '../lib/api'
   import { router } from '../lib/router.svelte'
   import { session } from '../lib/session.svelte'
+  import Button from '../lib/ui/Button.svelte'
+  import Input from '../lib/ui/Input.svelte'
 
   let current = $state('')
   let next = $state('')
@@ -41,11 +43,24 @@
   {#if error}
     <p class="error" role="alert">{error}</p>
   {/if}
-  <label for="current">Current password</label>
-  <input id="current" type="password" bind:value={current} required autocomplete="current-password" />
-  <label for="next">New password</label>
-  <input id="next" type="password" bind:value={next} required minlength="8" autocomplete="new-password" />
-  <button class="primary" type="submit" disabled={pending}>
+  <Input
+    id="current"
+    label="Current password"
+    type="password"
+    bind:value={current}
+    required
+    autocomplete="current-password"
+  />
+  <Input
+    id="next"
+    label="New password"
+    type="password"
+    bind:value={next}
+    required
+    minlength={8}
+    autocomplete="new-password"
+  />
+  <Button type="submit" disabled={pending}>
     {pending ? 'Saving…' : 'Change password'}
-  </button>
+  </Button>
 </form>

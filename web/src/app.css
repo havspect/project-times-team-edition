@@ -140,15 +140,25 @@ button:disabled {
   background: var(--accent-strong);
 }
 
-.ghost {
+.secondary {
   background: transparent;
   border-color: var(--border);
   color: var(--text);
   padding: var(--space-1) var(--space-2);
 }
 
-.ghost:hover:not(:disabled) {
+.secondary:hover:not(:disabled) {
   background: var(--bg);
+}
+
+.secondary[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.secondary[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--accent-strong);
 }
 
 .danger {
@@ -157,7 +167,8 @@ button:disabled {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   font: inherit;
   color: var(--text);
@@ -169,6 +180,7 @@ select {
 
 input:focus-visible,
 select:focus-visible,
+textarea:focus-visible,
 button:focus-visible,
 a:focus-visible {
   outline: 2px solid var(--accent);
@@ -246,9 +258,14 @@ tr:last-child td {
 
 .tabs [aria-current='page'],
 .tabs [aria-pressed='true'] {
+  background: transparent;
   color: var(--text);
   border-bottom-color: var(--accent);
   font-weight: 600;
+}
+
+.tabs button[aria-pressed='true']:hover:not(:disabled) {
+  background: transparent;
 }
 
 .badge {
@@ -702,16 +719,6 @@ dialog.project-picker .row-actions {
 
 .entry-panel .field {
   margin-bottom: var(--space-2);
-}
-
-.entry-panel textarea {
-  width: 100%;
-  font: inherit;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--space-2);
 }
 
 .entry-panel .row-actions {

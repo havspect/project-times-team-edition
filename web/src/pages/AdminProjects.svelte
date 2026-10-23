@@ -3,6 +3,9 @@
   import AdminNav from '../lib/AdminNav.svelte'
   import { api, problemMessage } from '../lib/api'
   import type { components } from '../lib/api/schema'
+  import Button from '../lib/ui/Button.svelte'
+  import Input from '../lib/ui/Input.svelte'
+  import Select from '../lib/ui/Select.svelte'
 
   type Project = components['schemas']['ProjectResponse']
   type Team = components['schemas']['TeamResponse']
@@ -145,26 +148,17 @@
 {/if}
 
 <form class="toolbar" onsubmit={create}>
-  <div class="field">
-    <label for="new-project">Name</label>
-    <input id="new-project" bind:value={name} required />
-  </div>
-  <div class="field">
-    <label for="new-project-team">Team</label>
-    <select id="new-project-team" bind:value={teamID} required>
-      <option value="" disabled>Choose a team</option>
-      {#each activeTeams as team (team.id)}
-        <option value={String(team.id)}>{team.name}</option>
-      {/each}
-    </select>
-  </div>
-  <div class="field">
-    <label for="new-project-color">Color</label>
-    <input id="new-project-color" class="color" type="color" bind:value={color} />
-  </div>
-  <button class="primary" type="submit" disabled={createPending || activeTeams.length === 0}>
+  <Input id="new-project" label="Name" bind:value={name} required />
+  <Select id="new-project-team" label="Team" bind:value={teamID} required>
+    <option value="" disabled>Choose a team</option>
+    {#each activeTeams as team (team.id)}
+      <option value={String(team.id)}>{team.name}</option>
+    {/each}
+  </Select>
+  <Input id="new-project-color" label="Color" class="color" type="color" bind:value={color} />
+  <Button type="submit" disabled={createPending || activeTeams.length === 0}>
     {createPending ? 'Creating…' : 'Create project'}
-  </button>
+  </Button>
   {#if activeTeams.length === 0}
     <p class="hint">Create an active team first.</p>
   {/if}
@@ -200,30 +194,28 @@
           </td>
           <td>
             <div class="row-actions">
-              <button class="ghost" type="button" onclick={() => startEdit(project)}>
+              <Button variant="secondary" onclick={() => startEdit(project)}>
                 {editing === project.id ? 'Close' : 'Edit'}
-              </button>
+              </Button>
               {#if project.archived_at}
-                <button
-                  class="ghost"
-                  type="button"
+                <Button
+                  variant="secondary"
                   onclick={() => restore(project)}
                   disabled={restoring === project.id || teamArchived(project.team_id)}
                 >
                   {restoring === project.id ? 'Restoring…' : 'Restore'}
-                </button>
+                </Button>
                 {#if teamArchived(project.team_id)}
                   <span class="hint">Team archived</span>
                 {/if}
               {:else}
-                <button
-                  class="ghost"
-                  type="button"
+                <Button
+                  variant="secondary"
                   onclick={() => archive(project)}
                   disabled={archiving === project.id}
                 >
                   {archiving === project.id ? 'Archiving…' : 'Archive'}
-                </button>
+                </Button>
               {/if}
             </div>
           </td>
@@ -232,34 +224,35 @@
           <tr>
             <td colspan="4">
               <form class="toolbar" onsubmit={(event) => save(event, project)}>
-                <div class="field">
-                  <label for={`project-name-${project.id}`}>Name</label>
-                  <input id={`project-name-${project.id}`} bind:value={editName} required />
-                </div>
-                <div class="field">
-                  <label for={`project-team-${project.id}`}>Team</label>
-                  <select id={`project-team-${project.id}`} bind:value={editTeam}>
-                    {#each teams as team (team.id)}
-                      <option value={String(team.id)}>
-                        {team.name}{team.archived_at ? ' (archived)' : ''}
-                      </option>
-                    {/each}
-                  </select>
-                  <span class="hint">A project can only change team while it has no entries.</span>
-                </div>
-                <div class="field">
-                  <label for={`project-color-${project.id}`}>Color</label>
-                  <input
-                    id={`project-color-${project.id}`}
-                    class="color"
-                    type="color"
-                    bind:value={editColor}
-                  />
-                </div>
-                <button class="primary" type="submit" disabled={savePending}>
+                <Input
+                  id={`project-name-${project.id}`}
+                  label="Name"
+                  bind:value={editName}
+                  required
+                />
+                <Select
+                  id={`project-team-${project.id}`}
+                  label="Team"
+                  bind:value={editTeam}
+                  hint="A project can only change team while it has no entries."
+                >
+                  {#each teams as team (team.id)}
+                    <option value={String(team.id)}>
+                      {team.name}{team.archived_at ? ' (archived)' : ''}
+                    </option>
+                  {/each}
+                </Select>
+                <Input
+                  id={`project-color-${project.id}`}
+                  label="Color"
+                  class="color"
+                  type="color"
+                  bind:value={editColor}
+                />
+                <Button type="submit" disabled={savePending}>
                   {savePending ? 'Saving…' : 'Save'}
-                </button>
-                <button class="ghost" type="button" onclick={() => (editing = null)}>Cancel</button>
+                </Button>
+                <Button variant="secondary" onclick={() => (editing = null)}>Cancel</Button>
               </form>
             </td>
           </tr>

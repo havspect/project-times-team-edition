@@ -5,6 +5,8 @@
   import type { components } from '../lib/api/schema'
   import { currentWeek } from '../lib/format'
   import { session } from '../lib/session.svelte'
+  import Button from '../lib/ui/Button.svelte'
+  import Input from '../lib/ui/Input.svelte'
 
   type Entry = components['schemas']['EntryResponse']
   type Project = components['schemas']['ProjectResponse']
@@ -78,27 +80,21 @@
 {/if}
 
 <form class="toolbar" onsubmit={(event) => { event.preventDefault(); void load() }}>
-  <div class="field">
-    <label for="entries-from">From</label>
-    <input id="entries-from" type="date" bind:value={from} required />
-  </div>
-  <div class="field">
-    <label for="entries-to">To</label>
-    <input id="entries-to" type="date" bind:value={to} required />
-  </div>
-  <button class="primary" type="submit" disabled={loading}>
+  <Input id="entries-from" label="From" type="date" bind:value={from} required />
+  <Input id="entries-to" label="To" type="date" bind:value={to} required />
+  <Button type="submit" disabled={loading}>
     {loading ? 'Loading…' : 'Load'}
-  </button>
+  </Button>
   <p class="hint">The end date is exclusive.</p>
 </form>
 
 <div class="tabs" role="group" aria-label="Entry state">
-  <button type="button" aria-pressed={tab === 'live'} onclick={() => (tab = 'live')}>
+  <Button variant="secondary" active={tab === 'live'} onclick={() => (tab = 'live')}>
     Live ({live.length})
-  </button>
-  <button type="button" aria-pressed={tab === 'deleted'} onclick={() => (tab = 'deleted')}>
+  </Button>
+  <Button variant="secondary" active={tab === 'deleted'} onclick={() => (tab = 'deleted')}>
     Deleted ({deleted.length})
-  </button>
+  </Button>
 </div>
 
 {#if loading}
@@ -133,14 +129,13 @@
           {#if tab === 'deleted'}
             <td>{entry.deleted_at ? at(entry.deleted_at) : ''}</td>
             <td>
-              <button
-                class="ghost"
-                type="button"
+              <Button
+                variant="secondary"
                 onclick={() => restore(entry)}
                 disabled={restoring === entry.id}
               >
                 {restoring === entry.id ? 'Restoring…' : 'Restore'}
-              </button>
+              </Button>
             </td>
           {/if}
         </tr>

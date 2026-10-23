@@ -3,6 +3,8 @@
   import AdminNav from '../lib/AdminNav.svelte'
   import { api, problemMessage } from '../lib/api'
   import type { components } from '../lib/api/schema'
+  import Button from '../lib/ui/Button.svelte'
+  import Input from '../lib/ui/Input.svelte'
 
   type User = components['schemas']['UserResponse']
   type Notice = { who: string; password: string }
@@ -135,38 +137,25 @@
       <code class="secret">{notice.password}</code>
     </span>
     <span class="hint">A new or reset password ends that user's sessions and API tokens.</span>
-    <button class="ghost" type="button" onclick={copy}>{copied ? 'Copied' : 'Copy'}</button>
-    <button
-      class="ghost"
-      type="button"
+    <Button variant="secondary" onclick={copy}>{copied ? 'Copied' : 'Copy'}</Button>
+    <Button
+      variant="secondary"
       onclick={() => {
         notice = null
         copied = false
-      }}>Dismiss</button
+      }}>Dismiss</Button
     >
   </div>
 {/if}
 
 <form class="toolbar" onsubmit={create}>
-  <div class="field">
-    <label for="new-email">Email</label>
-    <input id="new-email" type="email" bind:value={email} required autocomplete="off" />
-  </div>
-  <div class="field">
-    <label for="new-name">Name</label>
-    <input id="new-name" bind:value={name} required />
-  </div>
-  <div class="field">
-    <label for="new-timezone">Timezone</label>
-    <input id="new-timezone" bind:value={timezone} required />
-  </div>
-  <div class="field check">
-    <input id="new-admin" type="checkbox" bind:checked={isAdmin} />
-    <label for="new-admin">Admin</label>
-  </div>
-  <button class="primary" type="submit" disabled={createPending}>
+  <Input id="new-email" label="Email" type="email" bind:value={email} required autocomplete="off" />
+  <Input id="new-name" label="Name" bind:value={name} required />
+  <Input id="new-timezone" label="Timezone" bind:value={timezone} required />
+  <Input id="new-admin" label="Admin" type="checkbox" bind:checked={isAdmin} />
+  <Button type="submit" disabled={createPending}>
     {createPending ? 'Creating…' : 'Create user'}
-  </button>
+  </Button>
 </form>
 
 {#if loading}
@@ -201,17 +190,16 @@
           </td>
           <td>
             <div class="row-actions">
-              <button class="ghost" type="button" onclick={() => startEdit(user)}>
+              <Button variant="secondary" onclick={() => startEdit(user)}>
                 {editing === user.id ? 'Close' : 'Edit'}
-              </button>
-              <button
-                class="ghost"
-                type="button"
+              </Button>
+              <Button
+                variant="secondary"
                 onclick={() => reset(user)}
                 disabled={resetting === user.id}
               >
                 {resetting === user.id ? 'Resetting…' : 'Reset password'}
-              </button>
+              </Button>
             </div>
           </td>
         </tr>
@@ -219,26 +207,29 @@
           <tr>
             <td colspan="7">
               <form class="toolbar" onsubmit={(event) => save(event, user)}>
-                <div class="field">
-                  <label for={`edit-name-${user.id}`}>Name</label>
-                  <input id={`edit-name-${user.id}`} bind:value={editName} required />
-                </div>
-                <div class="field">
-                  <label for={`edit-timezone-${user.id}`}>Timezone</label>
-                  <input id={`edit-timezone-${user.id}`} bind:value={editTimezone} required />
-                </div>
-                <div class="field check">
-                  <input id={`edit-admin-${user.id}`} type="checkbox" bind:checked={editAdmin} />
-                  <label for={`edit-admin-${user.id}`}>Admin</label>
-                </div>
-                <div class="field check">
-                  <input id={`edit-active-${user.id}`} type="checkbox" bind:checked={editActive} />
-                  <label for={`edit-active-${user.id}`}>Active</label>
-                </div>
-                <button class="primary" type="submit" disabled={savePending}>
+                <Input id={`edit-name-${user.id}`} label="Name" bind:value={editName} required />
+                <Input
+                  id={`edit-timezone-${user.id}`}
+                  label="Timezone"
+                  bind:value={editTimezone}
+                  required
+                />
+                <Input
+                  id={`edit-admin-${user.id}`}
+                  label="Admin"
+                  type="checkbox"
+                  bind:checked={editAdmin}
+                />
+                <Input
+                  id={`edit-active-${user.id}`}
+                  label="Active"
+                  type="checkbox"
+                  bind:checked={editActive}
+                />
+                <Button type="submit" disabled={savePending}>
                   {savePending ? 'Saving…' : 'Save'}
-                </button>
-                <button class="ghost" type="button" onclick={() => (editing = null)}>Cancel</button>
+                </Button>
+                <Button variant="secondary" onclick={() => (editing = null)}>Cancel</Button>
               </form>
             </td>
           </tr>

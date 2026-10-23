@@ -4,6 +4,7 @@
   import { router } from './lib/router.svelte'
   import { session } from './lib/session.svelte'
   import Link from './lib/Link.svelte'
+  import Button from './lib/ui/Button.svelte'
   import Login from './pages/Login.svelte'
   import NotFound from './pages/NotFound.svelte'
   import Password from './pages/Password.svelte'
@@ -88,7 +89,7 @@
     </nav>
     <div class="who">
       <span>{user.name} · {user.timezone}</span>
-      <button class="ghost" type="button" onclick={logout}>Log out</button>
+      <Button variant="secondary" onclick={logout}>Log out</Button>
     </div>
   {/if}
 </header>
