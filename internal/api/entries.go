@@ -77,106 +77,6 @@ func (s *Server) entryRoutes(api huma.API) {
 	}, s.restoreEntry)
 }
 
-// dateRange is a query range: from inclusive, to exclusive, both plain dates.
-type dateRange struct{ From, To time.Time }
-
-// padded widens the range by 14h either side, the widest offset a timezone can
-// be from UTC, so an entry crossing a local midnight is fetched before it is
-// split in Go.
-func (r dateRange) padded() (time.Time, time.Time) {
-	return r.From.Add(-14 * time.Hour), r.To.Add(14 * time.Hour)
-}
-
-// parseRange reads from/to as plain dates, defaulting to the caller's current
-// ISO week. An empty one of the pair is a 422, never half a range.
-func (s *Server) parseRange(u *store.User, from, to string) (dateRange, error) {
-	const layout = "2006-01-02"
-	if from == "" && to == "" {
-		loc, err := time.LoadLocation(u.Timezone)
-		if err != nil {
-			return dateRange{}, internal(err)
-		}
-		local := s.Clock.Now().In(loc)
-		monday := time.Date(local.Year(), local.Month(), local.Day()-((int(local.Weekday())+6)%7), 0, 0, 0, 0, loc)
-		// from/to are plain dates, so take the local calendar dates, not the
-		// instants: a Monday 00:00 in UTC+14 is still Sunday in UTC.
-		y, m, d := monday.Date()
-		ny, nm, nd := monday.AddDate(0, 0, 7).Date()
-		return dateRange{
-			time.Date(y, m, d, 0, 0, 0, 0, time.UTC),
-			time.Date(ny, nm, nd, 0, 0, 0, 0, time.UTC),
-		}, nil
-	}
-	if from == "" || to == "" {
-		return dateRange{}, problem(http.StatusUnprocessableEntity, urnInvalidInput, "from and to must be given together")
-	}
-	f, err := time.Parse(layout, from)
-	if err != nil {
-		return dateRange{}, problem(http.StatusUnprocessableEntity, urnInvalidInput, "from must be a YYYY-MM-DD date")
-	}
-	t, err := time.Parse(layout, to)
-	if err != nil {
-		return dateRange{}, problem(http.StatusUnprocessableEntity, urnInvalidInput, "to must be a YYYY-MM-DD date")
-	}
-	if !t.After(f) {
-		return dateRange{}, problem(http.StatusUnprocessableEntity, urnInvalidInput, "to must be after from")
-	}
-	if t.Sub(f) > 366*24*time.Hour {
-		return dateRange{}, problem(http.StatusUnprocessableEntity, urnInvalidInput, "the range may not be longer than 366 days")
-	}
-	return dateRange{f, t}, nil
-}
-
-// entryFilter narrows a listing or report on top of the caller's scope.
-type entryFilter struct {
-	UserID    uint
-	ProjectID uint
-	TeamID    uint
-}
-
-// matching keeps only the entries the filter names; 0 means "no filter". Team
-// membership comes from the project's team, so it is applied here, not in SQL.
-func (f entryFilter) matching(entries []store.Entry, projects map[uint]store.Project) []store.Entry {
-	out := make([]store.Entry, 0, len(entries))
-	for _, e := range entries {
-		if f.UserID != 0 && e.UserID != f.UserID {
-			continue
-		}
-		if f.ProjectID != 0 && e.ProjectID != f.ProjectID {
-			continue
-		}
-		if f.TeamID != 0 && projects[e.ProjectID].TeamID != f.TeamID {
-			continue
-		}
-		out = append(out, e)
-	}
-	return out
-}
-
-// loadEntries fetches the caller's readable entries for rng, already narrowed by
-// filter. It also returns the projects the entries reference, which the report
-// and the team filter both need.
-func (s *Server) loadEntries(scope store.Scope, rng dateRange, filter entryFilter) ([]store.Entry, map[uint]store.Project, error) {
-	from, to := rng.padded()
-	entries, err := s.Store.EntriesInRange(from, to, scope)
-	if err != nil {
-		return nil, nil, err
-	}
-	ids := make([]uint, 0, len(entries))
-	for _, e := range entries {
-		ids = append(ids, e.ProjectID)
-	}
-	projects, err := s.Store.ProjectsByIDs(ids)
-	if err != nil {
-		return nil, nil, err
-	}
-	byID := make(map[uint]store.Project, len(projects))
-	for _, p := range projects {
-		byID[p.ID] = p
-	}
-	return filter.matching(entries, byID), byID, nil
-}
-
 // requireLoggableProject checks the project a new or moved entry points at:
 // unknown is a 422, and an archived project takes no new entries.
 func (s *Server) requireLoggableProject(id uint) error {
@@ -222,17 +122,17 @@ func (s *Server) listEntries(ctx context.Context, in *entryListInput) (*entryLis
 	if err != nil {
 		return nil, internal(err)
 	}
-	rng, err := s.parseRange(u, in.From, in.To)
+	rng, err := parseRange(u.Timezone, s.Clock.Now(), in.From, in.To)
 	if err != nil {
 		return nil, err
 	}
-	entries, _, err := s.loadEntries(scope, rng, entryFilter{UserID: in.UserID, ProjectID: in.ProjectID})
+	page, err := s.readEntries(scope, rng, entryFilter{UserID: in.UserID, ProjectID: in.ProjectID})
 	if err != nil {
 		return nil, internal(err)
 	}
-	out := make([]entryResponse, 0, len(entries))
-	for i := range entries {
-		out = append(out, entryResponseOf(&entries[i]))
+	out := make([]entryResponse, 0, len(page.entries))
+	for i := range page.entries {
+		out = append(out, entryResponseOf(&page.entries[i]))
 	}
 	return &entryListOutput{Body: out}, nil
 }

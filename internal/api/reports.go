@@ -116,24 +116,24 @@ func (s *Server) reportSegments(ctx context.Context, in *reportInput) ([]report.
 	if err != nil {
 		return nil, internal(err)
 	}
-	rng, err := s.parseRange(u, in.From, in.To)
+	rng, err := parseRange(u.Timezone, s.Clock.Now(), in.From, in.To)
 	if err != nil {
 		return nil, err
 	}
-	entries, byProject, err := s.loadEntries(scope, rng, entryFilter{
+	page, err := s.readEntries(scope, rng, entryFilter{
 		UserID: in.UserID, ProjectID: in.ProjectID, TeamID: in.TeamID,
 	})
 	if err != nil {
 		return nil, internal(err)
 	}
 
-	userIDs := make([]uint, 0, len(entries))
-	projects := make([]store.Project, 0, len(byProject))
-	teamIDs := make([]uint, 0, len(byProject))
-	for _, e := range entries {
+	userIDs := make([]uint, 0, len(page.entries))
+	projects := make([]store.Project, 0, len(page.projects))
+	teamIDs := make([]uint, 0, len(page.projects))
+	for _, e := range page.entries {
 		userIDs = append(userIDs, e.UserID)
 	}
-	for _, p := range byProject {
+	for _, p := range page.projects {
 		projects = append(projects, p)
 		teamIDs = append(teamIDs, p.TeamID)
 	}
@@ -147,7 +147,7 @@ func (s *Server) reportSegments(ctx context.Context, in *reportInput) ([]report.
 	}
 
 	// A running entry counts up to now; only deleted ones are excluded.
-	segments, err := report.Split(toReportInput(entries, users, projects, teams, s.Clock.Now()), rng.From, rng.To)
+	segments, err := report.Split(toReportInput(page.entries, users, projects, teams, s.Clock.Now()), rng.From, rng.To)
 	if err != nil {
 		return nil, internal(err)
 	}
