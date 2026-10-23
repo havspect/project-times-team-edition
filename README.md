@@ -52,6 +52,42 @@ Open `http://localhost:8080` and log in with the initial password the first
 command printed. Change it when prompted, then create teams, users and
 memberships under **/admin**. The CLI reads those; it does not create them.
 
+## Deploy on a VM
+
+Production is one VM running `tstamps-server` under systemd, with Caddy terminating
+TLS on the same host ([ADR-0009](docs/adr/0009-deploy-on-one-vm.md)). The unit
+files and Caddyfile are in [`deploy/`](deploy).
+
+```sh
+# On the VM, after `just build-prod` and copying tstamps-server over:
+sudo useradd --system --home /var/lib/tstamps --shell /usr/sbin/nologin tstamps
+sudo install -m 0755 tstamps-server /usr/local/bin/tstamps-server
+sudo install -d -o tstamps -g tstamps -m 0700 /var/backups/tstamps
+sudo install -m 0644 deploy/tstamps-server.service deploy/tstamps-backup.service \
+  deploy/tstamps-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now tstamps-server tstamps-backup.timer
+
+# Edit the hostname in deploy/Caddyfile first.
+sudo install -m 0644 deploy/Caddyfile /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+```
+
+Create the first admin against the live database (the CLI reads and writes the
+same file; the server keeps serving):
+
+```sh
+sudo -u tstamps tstamps-server admin create \
+  --db /var/lib/tstamps/tstamps.db --email you@example.com --name "Your Name"
+```
+
+The unit binds `127.0.0.1:8080`; Caddy is the only public listener and sets the
+`X-Forwarded-Proto` header the server needs to mark cookies `Secure`, plus the
+`X-Forwarded-For` hop it uses for client IPs in logs and login rate limiting. The
+server trusts both only because it listens on localhost; do not expose port 8080
+directly. `GET /healthz` answers 200 only while SQLite is reachable, and reports
+the schema version stored in the file.
+
 ## CLI
 
 The CLI talks to the API, never to the database. Log in once per machine; the
@@ -113,17 +149,29 @@ it is shown once.
 Everything lives in one SQLite file (`tstamps.db` by default) plus its `-wal` and
 `-shm` companions while the server runs.
 
-- **With the server stopped:** copy `tstamps.db` (and the WAL/SHM files if they
-  are still there), or copy the whole directory.
-- **With the server running:** use SQLite's online backup, which is safe under
-  WAL:
+- **With the server running:** `tstamps-server backup` takes a consistent
+  snapshot with SQLite's `VACUUM INTO`. It refuses an existing file, so a
+  date-stamped name never overwrites yesterday:
 
   ```sh
-  sqlite3 tstamps.db ".backup 'tstamps-backup.db'"
+  tstamps-server backup --db /var/lib/tstamps/tstamps.db \
+    "/var/backups/tstamps/tstamps-$(date -u +%Y%m%dT%H%M%SZ).db"
   ```
 
+  `deploy/tstamps-backup.timer` runs that nightly and deletes files older than
+  14 days.
+
+- **With the server stopped:** copy `tstamps.db` (and the WAL/SHM files if they
+  are still there), or copy the whole directory.
+
+- **Off the box:** a snapshot on the same disk is not a backup. Copy
+  `/var/backups/tstamps` with restic, borg, rclone or whatever the host already
+  uses.
+
 - **Restore:** stop the server, replace `tstamps.db` (remove stale `-wal`/`-shm`),
-  start the server. Migrations run at boot.
+  start it, check `curl -fsS http://127.0.0.1:8080/healthz`, and read one report.
+  Migrations run at boot.
+
 - The client config holds a bearer token and is a credential, not data worth
   backing up.
 
@@ -133,17 +181,23 @@ backup.
 
 ## Upgrade
 
-Stop the server, take a backup, install the new `tstamps-server`, start it. `AutoMigrate`
-runs at boot; `GET /healthz` reports the schema version. There is no downgrade
-path — restore the backup to go back.
+Stop the server, take a backup, install the new `tstamps-server`, start it.
+`AutoMigrate` runs at boot and records the schema version in the database file;
+`GET /healthz` reports that version. A binary refuses to start on a database
+written by a newer schema, so there is no silent downgrade — restore the backup
+to go back.
 
 ## Development
 
 ```sh
 just check       # go vet, go test, svelte-check, vitest
+just e2e         # build the server, then one Playwright smoke walk
 just dev         # API plus Vite dev server, both hot reloading
 just serve-watch # API only, hot reloaded (UI comes from Vite)
 ```
+
+`just e2e` needs the browser once: `pnpm --dir web exec playwright install chromium`.
+CI runs the same smoke test against the built server.
 
 `just dev` needs [hivemind](https://github.com/DarthSim/hivemind) and
 [air](https://github.com/air-verse/air) (`go install
@@ -151,5 +205,6 @@ github.com/air-verse/air@latest`). Air rebuilds and restarts the API on Go
 changes; Vite hot-reloads the UI on the same page.
 
 `go test ./...` passes offline with no external services. The end-to-end test
-builds the binary, serves on a free port, bootstraps an admin, logs an entry,
-exports CSV and calls the MCP server over stdio.
+builds both binaries, serves on a free port, bootstraps an admin, logs an entry,
+exports CSV and calls the MCP server over stdio. The Playwright smoke test drives
+the built UI: login, an entry on the timeline, the report table and the CSV.

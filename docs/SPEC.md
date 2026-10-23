@@ -117,13 +117,15 @@ Errors are RFC 9457 problem+json. The stable machine-readable code lives in the 
 | POST | `/timer/stop` | ends at now, optional note |
 | GET | `/reports?from&to&by=week\|day\|month\|none[&team_id][&user_id][&project_id]` | aggregated seconds |
 | GET | `/reports.csv` | same filters, entry-per-day rows |
-| GET | `/healthz` | liveness + schema version |
+| GET | `/healthz` | database reachability + the schema version stored in the file; 503 when it cannot answer |
 | GET | `/openapi.json` | OpenAPI 3.1 document, generated from handlers |
 | GET | `/docs` | browsable API reference |
 
-Authentication: `POST /auth/login` returns an opaque session token in an `HttpOnly`, `SameSite=Lax` cookie, 30-day fixed expiry, stored hashed. Cookies are `Secure` unless `--insecure-cookies` is passed, so production sits behind a TLS-terminating proxy. Every other request may instead send `Authorization: Bearer ts_...`. Tokens are shown once at creation, stored as SHA-256, and act as the owning user. Login is rate limited per IP in memory. A user with `must_change_password` can authenticate but is confined to the three endpoints listed in the rules above.
+Authentication: `POST /auth/login` returns an opaque session token in an `HttpOnly`, `SameSite=Lax` cookie, 30-day fixed expiry, stored hashed. The cookie is named `__Host-tstamps_session` and marked `Secure` when the request arrives over TLS or with `X-Forwarded-Proto: https`; over plain http it is `tstamps_session` without `Secure`, because browsers reject the `__Host-` prefix there. Production therefore sits behind a TLS-terminating proxy, bound to localhost. Every other request may instead send `Authorization: Bearer ts_...`. Tokens are shown once at creation, stored as SHA-256, and act as the owning user. Login is rate limited per IP in memory. A user with `must_change_password` can authenticate but is confined to the three endpoints listed in the rules above.
 
 Mutations over the cookie require a same-origin `Origin` header. There is no CORS: the SPA is served from the same origin.
+
+Every API request writes one structured log line to stderr (method, path without query, status, duration, bytes, remote IP, user id when authenticated). `TSTAMPS_LOG_LEVEL` or `--log-level` sets the minimum level; the default is `info`. The SPA and its assets are not logged.
 
 Admin edits are not audited in v1. That is an accepted risk, recorded here rather than solved.
 
@@ -171,11 +173,22 @@ Svelte 5 + Vite, built to static assets and embedded with `go:embed`. The SPA ca
 
 Leads do not get a team timeline in v1; the report table answers their question.
 
+## Operations
+
+Production is one VM: `tstamps-server` under systemd, Caddy terminating TLS on the same host, no container ([ADR-0009](./adr/0009-deploy-on-one-vm.md)). The unit files and Caddyfile live in `deploy/`. The server binds `127.0.0.1` because it trusts the proxy's `X-Forwarded-Proto` for cookies and its last `X-Forwarded-For` hop for client addresses.
+
+- **Backup** — `tstamps-server backup [--db path] <destination>` writes a consistent snapshot with SQLite's `VACUUM INTO`. It is safe while the server is running and refuses an existing file, so a date-stamped name never overwrites yesterday. The deploy timer runs it nightly and keeps 14 days. Operators copy that directory off the box; a backup on the same disk is not a backup.
+- **Restore** — stop the server, replace the database file, remove stale `-wal`/`-shm`, start the server. `AutoMigrate` runs at boot. Restore is verified by `/healthz` and one report read.
+- **Schema version** — the applied version is stored in `PRAGMA user_version` and reported by `/healthz`. A binary refuses to start on a database written by a newer schema; there is no downgrade path, restore the backup instead.
+- **Retention** — logged hours are the company's timekeeping record. A leaver is deactivated, not deleted; their entries stay visible. Erasing a person means erasing the workspace. There is no per-user erasure in v1.
+- **Upgrade** — stop, back up, replace the binary, start. Schema changes are additive via `AutoMigrate`; a newer database is refused rather than guessed at.
+
 ## Layout and stack
 
 ```
 cmd/tstamps/          user CLI: main, client subcommands, MCP
-cmd/tstamps-server/   server: main, serve, admin, openapi
+cmd/tstamps-server/   server: main, serve, admin, backup, openapi
+deploy/             systemd units, backup timer and Caddyfile
 e2e/                the acceptance walk over both binaries
 internal/config/    flags, env, config file
 internal/store/     GORM models, AutoMigrate, queries
@@ -187,10 +200,11 @@ internal/client/    typed HTTP client shared by CLI and MCP
 internal/cli/       subcommands
 internal/mcp/       MCP tool definitions
 web/                Svelte 5 + Vite source; web/dist is embedded
+web/e2e/            Playwright smoke test against the built server
 web/src/lib/api/    generated OpenAPI types (gitignored); the typed fetch wrapper sits beside them
 ```
 
-Go stdlib `net/http` behind Huma's adapter. `log/slog` for logs. No DI framework: `main` wires a `store`, an `auth`, and an `api.Server` explicitly. The GORM models are the schema: `AutoMigrate` runs at boot, followed by one raw `CREATE UNIQUE INDEX ... WHERE end_at IS NULL` for the single running entry, which tags cannot express ([ADR-0005](./adr/0005-gorm-pure-go-sqlite.md)).
+Go stdlib `net/http` behind Huma's adapter. `log/slog` for logs. No DI framework: `main` wires a `store`, an `auth`, and an `api.Server` explicitly. The GORM models are the schema: `AutoMigrate` runs at boot, followed by one raw `CREATE UNIQUE INDEX ... WHERE end_at IS NULL` for the single running entry, which tags cannot express ([ADR-0005](./adr/0005-gorm-pure-go-sqlite.md)). The same boot path records `SchemaVersion` in `PRAGMA user_version` and refuses a database that reports a newer one.
 
 One build pipeline, in this order: `go run ./cmd/tstamps-server openapi > web/openapi.json`, `openapi-typescript` into `web/src/lib/api/schema.d.ts`, `vite build` into `web/dist`, `go build` embeds it. `just dev` runs the API and Vite together from a Procfile; `just build` runs the pipeline. No generated types are committed.
 
@@ -199,10 +213,11 @@ One build pipeline, in this order: `go run ./cmd/tstamps-server openapi > web/op
 `go test ./...` must pass offline, with no external services.
 
 - **entry/report unit tests** — local-midnight splits, DST spring-forward and fall-back, ISO week edges around New Year, calendar month edges, 14-hour padding, overlap detection, CSV escaping.
-- **store tests** — `AutoMigrate` on an empty temp-dir database, a second boot being a no-op, the partial index actually rejecting a second running entry, archived-project filtering, deleted-entry exclusion, soft delete and restore.
-- **API tests** — `httptest` with the full router; table-driven permission matrix (member / lead of that team / lead of another team / admin) over every endpoint; session and bearer auth incl. expired and revoked; range validation; 409 on double start. One test asserts `/openapi.json` lists every route in the spec table, so a missing Huma registration fails CI.
-- **CLI tests** — subcommands against a fake `client.Interface`; one end-to-end test builds the binary, bootstraps an admin, serves on `:0`, logs in, creates a project and entry, reads a report and a CSV, and performs an MCP initialize + tool call over stdio.
-- **Frontend** — `pnpm run check` (svelte-check + tsc) runs against freshly generated types, so an API change the UI did not follow fails the build. Vitest covers timeline math (pixels ↔ time, snapping, resize clamps). Browser tests are deferred; the timeline gets a manual checklist in the PR until they exist.
+- **store tests** — `AutoMigrate` on an empty temp-dir database, a second boot being a no-op, the schema version being recorded and a newer one refused, the partial index actually rejecting a second running entry, archived-project filtering, deleted-entry exclusion, soft delete and restore, and a backup that can be opened with the rows intact.
+- **API tests** — `httptest` with the full router; table-driven permission matrix (member / lead of that team / lead of another team / admin) over every endpoint; session and bearer auth incl. expired and revoked; range validation; 409 on double start; `/healthz` failing when the database is gone; security headers; the request body cap; the access-log line. One test asserts `/openapi.json` lists every route in the spec table, so a missing Huma registration fails CI.
+- **CLI tests** — subcommands against a fake `client.Interface`. The `e2e` package builds both binaries, bootstraps an admin, serves on a free port, logs in, creates a project and entry, reads a report and a CSV, and performs an MCP initialize + tool call over stdio.
+- **Frontend** — `pnpm run check` (svelte-check + tsc) runs against freshly generated types, so an API change the UI did not follow fails the build. Vitest covers timeline math (pixels ↔ time, snapping, resize clamps). Playwright runs one smoke walk against the built server — login, log an entry on the timeline, read the report, download the CSV — in CI.
+- **CI** — `ci.yml` runs vet, `go test -race`, the web checks, both builds and the browser smoke test on every push and pull request; the release workflow reuses it, so a tag cannot ship code that did not pass.
 
 Time is injected (`Clock` interface) anywhere "now" matters; tests never sleep.
 

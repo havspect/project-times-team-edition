@@ -5,6 +5,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 
@@ -75,12 +76,12 @@ func New(st *store.Store, clk clock.Clock) http.Handler {
 	})
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", health)
+	mux.HandleFunc("GET /healthz", s.health)
 	// Only the API subtree needs a session: the SPA shell must load so a user
 	// with must_change_password can reach the password screen.
-	mux.Handle("/api/", s.withRequest(apiMux))
+	mux.Handle("/api/", s.withAccessLog(s.withRequest(apiMux)))
 	mux.Handle("/", web.Handler())
-	return mux
+	return securityHeaders(mux)
 }
 
 // Spec returns the generated OpenAPI document, for `tstamps openapi`.
@@ -93,11 +94,34 @@ func Spec() ([]byte, error) {
 	return rec.Body.Bytes(), nil
 }
 
-func health(w http.ResponseWriter, _ *http.Request) {
+// health answers 200 only when the database is reachable, and reports the schema
+// version stored in the file rather than the one this binary expects.
+func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
+	version, err := s.Store.SchemaVersion()
+	if err == nil {
+		err = s.Store.Ping()
+	}
+	if err != nil {
+		slog.Error("health", "error", err)
+		writeProblem(w, problem(http.StatusServiceUnavailable, urnUnavailable, "the database is not reachable"))
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	// Nothing to do if the write fails: the status and headers are already sent.
 	_ = json.NewEncoder(w).Encode(struct {
 		Status        string `json:"status"`
 		SchemaVersion int    `json:"schema_version"`
-	}{"ok", store.SchemaVersion})
+	}{"ok", version})
+}
+
+// securityHeaders are set here rather than in the proxy so the binary alone is
+// still safe; HSTS stays with TLS termination.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "same-origin")
+		next.ServeHTTP(w, r)
+	})
 }

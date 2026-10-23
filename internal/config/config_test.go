@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"log/slog"
+	"testing"
+)
 
 func TestLoad(t *testing.T) {
 	tests := []struct {
@@ -33,6 +36,21 @@ func TestLoad(t *testing.T) {
 		{
 			name:    "unknown flag",
 			args:    []string{"--nope"},
+			wantErr: true,
+		},
+		{
+			name: "log level from env",
+			env:  map[string]string{"TSTAMPS_LOG_LEVEL": "debug"},
+			want: Config{Addr: ":8080", DB: "./tstamps.db", LogLevel: slog.LevelDebug},
+		},
+		{
+			name: "log level from flag",
+			args: []string{"--log-level", "warn"},
+			want: Config{Addr: ":8080", DB: "./tstamps.db", LogLevel: slog.LevelWarn},
+		},
+		{
+			name:    "invalid log level",
+			env:     map[string]string{"TSTAMPS_LOG_LEVEL": "loud"},
 			wantErr: true,
 		},
 	}

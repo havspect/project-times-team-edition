@@ -207,3 +207,74 @@ func TestSetUserActive(t *testing.T) {
 		t.Errorf("SetUserActive(unknown) = %v, want ErrNotFound", err)
 	}
 }
+
+func TestMigrateRecordsSchemaVersion(t *testing.T) {
+	s := openTestStore(t)
+	version, err := s.SchemaVersion()
+	if err != nil {
+		t.Fatalf("schema version: %v", err)
+	}
+	if version != SchemaVersion {
+		t.Fatalf("schema version = %d, want %d", version, SchemaVersion)
+	}
+}
+
+func TestMigrateRefusesANewerDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tstamps.db")
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if err := s.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if err := s.db.Exec("PRAGMA user_version = 999").Error; err != nil {
+		t.Fatalf("bump version: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	s, err = Open(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer s.Close()
+	err = s.Migrate()
+	if err == nil || !strings.Contains(err.Error(), "newer") {
+		t.Fatalf("migrate newer database = %v, want a newer-schema error", err)
+	}
+}
+
+func TestBackupToCopiesData(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.CreateUser(&User{Email: "ada@example.com", Name: "Ada", PasswordHash: "x"}); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	dest := filepath.Join(t.TempDir(), "backup.db")
+	if err := s.BackupTo(dest); err != nil {
+		t.Fatalf("BackupTo: %v", err)
+	}
+
+	backup, err := Open(dest)
+	if err != nil {
+		t.Fatalf("open backup: %v", err)
+	}
+	defer backup.Close()
+	if _, err := backup.UserByEmail("ada@example.com"); err != nil {
+		t.Fatalf("user missing from backup: %v", err)
+	}
+}
+
+func TestBackupRefusesAnExistingFile(t *testing.T) {
+	s := openTestStore(t)
+	dest := filepath.Join(t.TempDir(), "backup.db")
+	if err := os.WriteFile(dest, []byte("not a database"), 0o600); err != nil {
+		t.Fatalf("seed destination: %v", err)
+	}
+	if err := s.BackupTo(dest); err == nil {
+		t.Fatal("BackupTo over an existing file = nil, want an error")
+	}
+}

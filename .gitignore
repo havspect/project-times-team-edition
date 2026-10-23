@@ -8,3 +8,6 @@ web/dist/
 web/node_modules/
 web/openapi.json
 web/src/lib/api/schema.d.ts
+web/e2e/.state.json
+web/test-results/
+web/playwright-report/

@@ -3,6 +3,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
@@ -11,7 +12,9 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// SchemaVersion is reported by /healthz so support can tell which model set a database has.
+// SchemaVersion is the model set this binary understands. It is stored in the
+// database's PRAGMA user_version so /healthz reports what is on disk, not what
+// the binary hopes is there, and an older binary refuses a newer database.
 const SchemaVersion = 4
 
 // ErrNotFound is returned when a lookup matches no row.
@@ -65,8 +68,16 @@ func (s *Store) Close() error {
 	return sqlDB.Close()
 }
 
-// Migrate creates or updates the tables; running it on every boot is safe.
+// Migrate creates or updates the tables; running it on every boot is safe. A
+// database written by a newer binary is refused rather than silently mistreated.
 func (s *Store) Migrate() error {
+	version, err := s.SchemaVersion()
+	if err != nil {
+		return err
+	}
+	if version > SchemaVersion {
+		return fmt.Errorf("database schema %d is newer than this binary (%d)", version, SchemaVersion)
+	}
 	if err := s.db.AutoMigrate(&User{}, &Session{}, &Team{}, &TeamMembership{}, &Project{}, &APIToken{}, &Entry{}); err != nil {
 		return err
 	}
@@ -78,8 +89,35 @@ func (s *Store) Migrate() error {
 		return err
 	}
 	// One running entry per user; struct tags cannot express a partial index.
-	return s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_one_running
-		ON entries(user_id) WHERE end_at IS NULL AND deleted_at IS NULL`).Error
+	if err := s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_one_running
+		ON entries(user_id) WHERE end_at IS NULL AND deleted_at IS NULL`).Error; err != nil {
+		return err
+	}
+	return s.db.Exec(fmt.Sprintf("PRAGMA user_version = %d", SchemaVersion)).Error
+}
+
+// SchemaVersion returns the schema version recorded in the database file.
+func (s *Store) SchemaVersion() (int, error) {
+	var version int
+	if err := s.db.Raw("PRAGMA user_version").Row().Scan(&version); err != nil {
+		return 0, err
+	}
+	return version, nil
+}
+
+// Ping reports whether the database can answer.
+func (s *Store) Ping() error {
+	sqlDB, err := s.db.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Ping()
+}
+
+// BackupTo writes a consistent snapshot to dest. VACUUM INTO is safe while the
+// server is writing and refuses to overwrite an existing file.
+func (s *Store) BackupTo(dest string) error {
+	return s.db.Exec("VACUUM INTO ?", dest).Error
 }
 
 // CreateUser inserts u, lowercasing and trimming u.Email in place. A taken email

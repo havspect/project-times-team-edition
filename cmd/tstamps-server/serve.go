@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -18,13 +19,13 @@ import (
 )
 
 func serve(args []string, stderr io.Writer) int {
-	log := slog.New(slog.NewTextHandler(stderr, nil))
-
 	cfg, err := config.Load(args, os.Getenv)
 	if err != nil {
-		log.Error("invalid flags", "error", err)
+		fmt.Fprintf(stderr, "tstamps-server serve: %v\n", err)
 		return 2
 	}
+	log := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	slog.SetDefault(log)
 
 	st, err := store.Open(cfg.DB)
 	if err != nil {

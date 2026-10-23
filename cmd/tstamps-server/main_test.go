@@ -20,6 +20,7 @@ func TestUsageErrors(t *testing.T) {
 		{"unknown command", []string{"unknown"}},
 		{"admin without subcommand", []string{"admin"}},
 		{"unknown admin subcommand", []string{"admin", "delete"}},
+		{"backup without destination", []string{"backup"}},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -137,4 +138,51 @@ func passwordFrom(t *testing.T, line string) string {
 		t.Fatalf("output %q has no %q", line, marker)
 	}
 	return strings.TrimSpace(line[i+len(marker):])
+}
+
+func TestBackup(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "tstamps.db")
+
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"admin", "create", "--email", "ada@example.com", "--name", "Ada", "--db", db}, &stdout, &stderr); code != 0 {
+		t.Fatalf("admin create exit %d: %s", code, stderr.String())
+	}
+
+	dest := filepath.Join(dir, "snapshot.db")
+	stdout.Reset()
+	stderr.Reset()
+	if code := run([]string{"backup", "--db", db, dest}, &stdout, &stderr); code != 0 {
+		t.Fatalf("backup exit %d: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), dest) {
+		t.Fatalf("stdout %q does not name the destination", stdout.String())
+	}
+
+	backup, err := store.Open(dest)
+	if err != nil {
+		t.Fatalf("open backup: %v", err)
+	}
+	defer backup.Close()
+	if _, err := backup.UserByEmail("ada@example.com"); err != nil {
+		t.Fatalf("admin missing from backup: %v", err)
+	}
+
+	// A second backup to the same name must fail rather than replace it.
+	if code := run([]string{"backup", "--db", db, dest}, &stdout, &stderr); code != 1 {
+		t.Fatalf("backup over an existing file exit %d, want 1", code)
+	}
+}
+
+func TestBackupMissingDatabase(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "missing.db")
+
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"backup", "--db", db, filepath.Join(dir, "snapshot.db")}, &stdout, &stderr); code != 1 {
+		t.Fatalf("backup missing database exit %d, want 1", code)
+	}
+	if _, err := os.Stat(db); !os.IsNotExist(err) {
+		t.Fatalf("backup created the missing database %s", db)
+	}
 }

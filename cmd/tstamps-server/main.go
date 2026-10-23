@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	// Users pick an IANA timezone; the zoneinfo tree is not guaranteed to exist
 	// on the hosts this ships to, so the database is embedded.
@@ -36,6 +37,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "serve":
 		return serve(args[1:], stderr)
 	case "openapi":
+		// The document goes to stdout; the request log would only pollute a pipe.
+		slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 		spec, err := api.Spec()
 		if err != nil {
 			fmt.Fprintf(stderr, "tstamps-server openapi: %v\n", err)
@@ -48,6 +51,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	case "admin":
 		return admin(args[1:], stdout, stderr)
+	case "backup":
+		return backup(args[1:], stdout, stderr)
 	}
 
 	fmt.Fprintf(stderr, "tstamps-server: unknown command %q; run tstamps-server help\n", args[0])
@@ -56,8 +61,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 const usageText = `usage: tstamps-server <command> [flags]
 
-  serve                      run the web UI and API (--addr, --db)
+  serve                      run the web UI and API (--addr, --db, --log-level)
   admin create               bootstrap an admin (--email, --name, --db)
+  backup <destination>       write a consistent copy of the database (--db first)
   openapi                    print the OpenAPI document
   version                    print the version
 

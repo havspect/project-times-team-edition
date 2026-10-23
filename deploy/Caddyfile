@@ -1,0 +1,10 @@
+# Terminates TLS and forwards to the server on localhost. Caddy sets
+# X-Forwarded-Proto, which is how the server knows to use the __Host- cookie;
+# the binary must never be reachable except through this proxy.
+#
+# Replace the hostname, point its DNS at this VM, then: caddy reload
+tstamps.example.com {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	reverse_proxy 127.0.0.1:8080
+}

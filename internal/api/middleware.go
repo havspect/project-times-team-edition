@@ -20,7 +20,34 @@ const (
 	// The __Host- prefix makes browsers require https, Path=/ and no Domain;
 	// plain http cannot set it, so the bare name is used there instead.
 	secureSessionCookie = "__Host-" + sessionCookie
+	// maxRequestBody bounds JSON bodies; no legitimate request comes close.
+	maxRequestBody = 1 << 20
 )
+
+// statusRecorder keeps the status and size for the access log without changing
+// the handler's view of the response.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func (r *statusRecorder) Write(b []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	n, err := r.ResponseWriter.Write(b)
+	r.bytes += n
+	return n, err
+}
+
+// Unwrap lets http.ResponseController reach the underlying writer.
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 type requestInfo struct {
 	Request    *http.Request
@@ -50,7 +77,14 @@ func principal(ctx context.Context) *store.User {
 // A database error is not an anonymous request, so it answers 500 instead.
 func (s *Server) withRequest(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ri := &requestInfo{Request: r}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+		// withAccessLog made the requestInfo; a direct call still needs one.
+		ri := requestFrom(r.Context())
+		if ri == nil {
+			ri = &requestInfo{}
+			r = r.WithContext(context.WithValue(r.Context(), requestKey{}, ri))
+		}
+		ri.Request = r
 		// A bearer header wins over a cookie: a bad token must not fall back to
 		// whatever session the browser happens to hold.
 		if token, ok := bearerToken(r); ok {
@@ -95,7 +129,37 @@ func (s *Server) withRequest(next http.Handler) http.Handler {
 			writeProblem(w, problem(http.StatusForbidden, urnPasswordChangeRequired, "change your password first"))
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestKey{}, ri)))
+		next.ServeHTTP(w, r)
+	})
+}
+
+// withAccessLog records one line per API request after the handler replies,
+// including the early 401/403 replies, so no request disappears from the log.
+// The path is logged without its query string.
+func (s *Server) withAccessLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		ri := &requestInfo{}
+		r = r.WithContext(context.WithValue(r.Context(), requestKey{}, ri))
+		rec := &statusRecorder{ResponseWriter: w}
+		next.ServeHTTP(rec, r)
+
+		status := rec.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		attrs := []any{
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", status,
+			"duration_ms", time.Since(start).Milliseconds(),
+			"bytes", rec.bytes,
+			"ip", clientIP(r),
+		}
+		if ri.User != nil {
+			attrs = append(attrs, "user_id", ri.User.ID)
+		}
+		slog.Info("request", attrs...)
 	})
 }
 

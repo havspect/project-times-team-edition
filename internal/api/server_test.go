@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -22,7 +23,9 @@ func get(t *testing.T, path string) *httptest.ResponseRecorder {
 }
 
 func TestHealthz(t *testing.T) {
-	rec := get(t, "/healthz")
+	h := newHarness(t)
+	rec := httptest.NewRecorder()
+	h.h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
@@ -38,6 +41,42 @@ func TestHealthz(t *testing.T) {
 	}
 	if body.Status != "ok" || body.SchemaVersion != store.SchemaVersion {
 		t.Fatalf("body = %+v, want status ok and schema_version %d", body, store.SchemaVersion)
+	}
+}
+
+func TestHealthzFailsWhenTheDatabaseIsGone(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "tstamps.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	if err := st.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	h := New(st, clock.System{})
+	if err := st.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+	wantProblem(t, rec, http.StatusServiceUnavailable, urnUnavailable)
+}
+
+func TestSecurityHeaders(t *testing.T) {
+	for _, path := range []string{"/", "/api/v1/unknown"} {
+		rec := get(t, path)
+		if got := rec.Header().Get("Content-Security-Policy"); !strings.Contains(got, "default-src 'self'") {
+			t.Errorf("%s CSP = %q, want a default-src 'self' policy", path, got)
+		}
+		if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Errorf("%s X-Content-Type-Options = %q, want nosniff", path, got)
+		}
+		if got := rec.Header().Get("Referrer-Policy"); got != "same-origin" {
+			t.Errorf("%s Referrer-Policy = %q, want same-origin", path, got)
+		}
 	}
 }
 

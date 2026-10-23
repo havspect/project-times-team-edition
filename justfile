@@ -38,3 +38,7 @@ serve-watch:
 # Run the API only; the UI is embedded in the binary.
 serve:
     go run ./cmd/tstamps-server serve
+
+# Run the browser smoke test against a freshly built server.
+e2e: build
+    pnpm --dir web e2e

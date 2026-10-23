@@ -26,6 +26,7 @@ const (
 	urnTimerAlreadyRunning    = "urn:tstamps:error:timer-already-running"
 	urnEntryTooLong           = "urn:tstamps:error:entry-too-long"
 	urnProjectHasEntries      = "urn:tstamps:error:project-has-entries"
+	urnUnavailable            = "urn:tstamps:error:unavailable"
 )
 
 func problem(status int, urn, detail string) *huma.ErrorModel {

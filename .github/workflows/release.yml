@@ -9,15 +9,8 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - run: go test ./...
+    # The same gate as ci.yml: vet, race tests, web checks and the browser smoke test.
+    uses: ./.github/workflows/ci.yml
 
   # The user CLI only. The server embeds the web UI, so it is built where it runs
   # (just build-prod) and not published here.

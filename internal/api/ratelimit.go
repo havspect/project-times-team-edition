@@ -3,6 +3,7 @@ package api
 import (
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -47,12 +48,21 @@ func (l *loginLimiter) allow(ip string, now time.Time) bool {
 	return b.count <= loginLimit
 }
 
-// clientIP is the connection's peer. X-Forwarded-For is spoofable, so it is ignored.
-// shortcut: per-IP is the proxy's address behind a reverse proxy, upgrade when a trusted proxy config exists
+// clientIP is the client address. Behind the deployed proxy the peer is
+// localhost, so the last X-Forwarded-For hop (the one Caddy appended) wins;
+// a remote peer cannot set that header for itself.
 func clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		host = r.RemoteAddr
+	}
+	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+		return host
+	}
+	forwarded := r.Header.Get("X-Forwarded-For")
+	last := strings.TrimSpace(forwarded[strings.LastIndex(forwarded, ",")+1:])
+	if net.ParseIP(last) != nil {
+		return last
 	}
 	return host
 }
